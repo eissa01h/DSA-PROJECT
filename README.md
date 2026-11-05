@@ -2,7 +2,7 @@
 
 A Java Swing-based Parking Lot Simulation System developed for Data Structures and Algorithms (DSA).
 
-## Project Overview (Day 1 - 25% Milestone)
+## Project Overview (week-1 - 25%)
 - **GUI:** Minimalist, clean Java Swing interface.
 - **Layout:** $5 \times 6$ parking grid representing 30 parking spaces.
 - **Data Structure:** 2D Array layout representation (`String[][]`).
@@ -26,3 +26,4 @@ javac Main.java ParkingGUI.java ParkingManager.java
 # Run
 java Main
 ```
+
