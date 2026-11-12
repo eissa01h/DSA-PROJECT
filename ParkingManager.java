@@ -1,9 +1,11 @@
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 import java.util.Stack;
 
 public class ParkingManager {
-    // 2D Array representing the 5x6 parking lot layout (5 rows, 6 columns = 30 spaces)
+    // 1. DATA STRUCTURE: 2D Array representing the 5x6 parking lot (30 spaces)
     // Stores "EMPTY" if space is available, or the Vehicle ID if occupied
     private String[][] parkingLot;
     private final int ROWS = 5;
@@ -16,13 +18,55 @@ public class ParkingManager {
     // Track the distance of the most recently allocated vehicle for display
     private int lastAllocatedDistance = -1;
 
-    // QUEUE (FIFO) to manage waiting vehicles when their compatible zone is full
+    // 2. DATA STRUCTURE: QUEUE (FIFO) to manage waiting vehicles when a zone is full
     private Queue<WaitingVehicle> waitingQueue;
 
-    // STACK (LIFO) to maintain recent parking activity history
+    // 3. DATA STRUCTURE: STACK (LIFO) to maintain recent parking activity history
     private Stack<String> parkingHistory;
 
-    // Inner class representing a vehicle waiting in the queue
+    // Helper class representing an occupied parking record for sorting and searching
+    public static class ParkingRecord {
+        private String vehicleId;
+        private String category;
+        private String spotId;
+        private int row;
+        private int col;
+
+        public ParkingRecord(String vehicleId, String category, String spotId, int row, int col) {
+            this.vehicleId = vehicleId;
+            this.category = category;
+            this.spotId = spotId;
+            this.row = row;
+            this.col = col;
+        }
+
+        public String getVehicleId() {
+            return vehicleId;
+        }
+
+        public String getCategory() {
+            return category;
+        }
+
+        public String getSpotId() {
+            return spotId;
+        }
+
+        public int getRow() {
+            return row;
+        }
+
+        public int getCol() {
+            return col;
+        }
+
+        @Override
+        public String toString() {
+            return vehicleId + " (" + category + ") at space " + spotId;
+        }
+    }
+
+    // Helper class representing a vehicle waiting in the FIFO Queue
     public static class WaitingVehicle {
         private String category;
         private String vehicleId;
@@ -46,7 +90,7 @@ public class ParkingManager {
         }
     }
 
-    // Inner class representing the result of an exit operation
+    // Helper class representing the result of an exit operation
     public static class ExitResult {
         private boolean success;
         private String spotId;
@@ -131,7 +175,7 @@ public class ParkingManager {
         return !parkingLot[row][col].equals("EMPTY");
     }
 
-    // Manhattan Distance calculation: |r1 - r2| + |c1 - c2|
+    // 4. ALGORITHM: Manhattan Distance calculation: |r1 - r2| + |c1 - c2|
     public int calculateManhattanDistance(int row, int col) {
         return Math.abs(row - ENTRY_ROW) + Math.abs(col - ENTRY_COL);
     }
@@ -145,11 +189,11 @@ public class ParkingManager {
     }
 
     /**
-     * Vehicle Allocation (Day 2 & Day 3):
-     * 1. If space is available, allocates nearest space via Manhattan Distance & pushes record to STACK.
-     * 2. If zone is full, enqueues the vehicle into the WAITING QUEUE.
-     *
-     * @return Spot ID if parked, "QUEUED" if added to queue, "DUPLICATE" if already exists.
+     * 5. ALGORITHM: Linear Search & Nearest Allocation
+     * - Uses LINEAR SEARCH to scan compatible zone spaces.
+     * - Uses MANHATTAN DISTANCE to select the nearest available space to Entrance (0, 0).
+     * - If space found, pushes action to STACK (LIFO).
+     * - If full, adds to WAITING QUEUE (FIFO).
      */
     public String parkVehicle(String category, String vehicleId) {
         if (isVehicleParked(vehicleId) || isVehicleInQueue(vehicleId)) {
@@ -210,10 +254,10 @@ public class ParkingManager {
     }
 
     /**
-     * Vehicle Exit Feature (Day 3):
-     * 1. Finds the vehicle in the 2D array and releases its space.
-     * 2. Checks the WAITING QUEUE for the first compatible vehicle (FIFO).
-     * 3. If compatible waiting vehicle exists, allocates the freed spot to it and pushes to STACK.
+     * Vehicle Exit Feature:
+     * - Finds the vehicle in the 2D array and releases its space.
+     * - Checks the WAITING QUEUE for the first compatible vehicle (FIFO).
+     * - If found, re-allocates newly freed spot and pushes to STACK.
      */
     public ExitResult exitVehicle(String vehicleId) {
         int foundRow = -1;
@@ -265,7 +309,83 @@ public class ParkingManager {
         }
     }
 
-    // Helper: Polls the first compatible waiting vehicle from the queue (FIFO order)
+    /**
+     * 6. ALGORITHM: SELECTION SORT
+     * Collects all occupied parking spaces and sorts them alphabetically by Vehicle ID.
+     * Time Complexity: O(N^2)
+     */
+    public List<ParkingRecord> getSortedOccupiedRecords() {
+        List<ParkingRecord> records = new ArrayList<>();
+
+        // Gather all occupied spots
+        for (int r = 0; r < ROWS; r++) {
+            for (int c = 0; c < COLS; c++) {
+                if (isSpotOccupied(r, c)) {
+                    String spotId = getSpotId(r, c);
+                    String category = getZone(r, c).replace(" Zone", "");
+                    records.add(new ParkingRecord(parkingLot[r][c], category, spotId, r, c));
+                }
+            }
+        }
+
+        // SELECTION SORT Algorithm
+        int n = records.size();
+        for (int i = 0; i < n - 1; i++) {
+            int minIdx = i;
+            for (int j = i + 1; j < n; j++) {
+                if (records.get(j).getVehicleId().compareToIgnoreCase(records.get(minIdx).getVehicleId()) < 0) {
+                    minIdx = j;
+                }
+            }
+            if (minIdx != i) {
+                ParkingRecord temp = records.get(i);
+                records.set(i, records.get(minIdx));
+                records.set(minIdx, temp);
+            }
+        }
+
+        return records;
+    }
+
+    /**
+     * 7. ALGORITHM: BINARY SEARCH
+     * Searches for a vehicle in the sorted records by Vehicle ID.
+     * Time Complexity: O(log N)
+     */
+    public ParkingRecord searchVehicle(String vehicleId) {
+        List<ParkingRecord> sortedRecords = getSortedOccupiedRecords();
+        int low = 0;
+        int high = sortedRecords.size() - 1;
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            int cmp = sortedRecords.get(mid).getVehicleId().compareToIgnoreCase(vehicleId.trim());
+
+            if (cmp == 0) {
+                return sortedRecords.get(mid); // Found via Binary Search!
+            } else if (cmp < 0) {
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        return null; // Not found in parking spaces
+    }
+
+    // Get position of vehicle in waiting queue (1-based), or -1 if not in queue
+    public int getWaitingPosition(String vehicleId) {
+        int pos = 1;
+        for (WaitingVehicle v : waitingQueue) {
+            if (v.getVehicleId().equalsIgnoreCase(vehicleId)) {
+                return pos;
+            }
+            pos++;
+        }
+        return -1;
+    }
+
+    // Helper: Polls first compatible waiting vehicle from queue (FIFO order)
     private WaitingVehicle pollFirstCompatibleWaitingVehicle(String zone) {
         int size = waitingQueue.size();
         WaitingVehicle matched = null;
@@ -275,13 +395,13 @@ public class ParkingManager {
             if (matched == null && isCategoryCompatibleWithZone(current.getCategory(), zone)) {
                 matched = current;
             } else {
-                waitingQueue.offer(current); // Re-enqueue remaining vehicles in order
+                waitingQueue.offer(current);
             }
         }
         return matched;
     }
 
-    // Helper: Removes a vehicle directly from the waiting queue if requested
+    // Helper: Removes vehicle directly from queue if requested
     private boolean removeVehicleFromQueue(String vehicleId) {
         int size = waitingQueue.size();
         boolean removed = false;
@@ -296,17 +416,10 @@ public class ParkingManager {
         return removed;
     }
 
-    // Check if vehicle is currently in the waiting queue
     public boolean isVehicleInQueue(String vehicleId) {
-        for (WaitingVehicle v : waitingQueue) {
-            if (v.getVehicleId().equalsIgnoreCase(vehicleId)) {
-                return true;
-            }
-        }
-        return false;
+        return getWaitingPosition(vehicleId) != -1;
     }
 
-    // Check if vehicle is parked in any space
     public boolean isVehicleParked(String vehicleId) {
         for (int r = 0; r < ROWS; r++) {
             for (int c = 0; c < COLS; c++) {

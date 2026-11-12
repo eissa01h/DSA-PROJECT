@@ -4,6 +4,7 @@ import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.List;
 
 public class ParkingGUI extends JFrame {
 
@@ -13,22 +14,29 @@ public class ParkingGUI extends JFrame {
     private JLabel totalValueLbl;
     private JLabel occupiedValueLbl;
     private JLabel availableValueLbl;
-    private JLabel waitingValueLbl; // Day 3: Queue display
+    private JLabel waitingValueLbl;
 
     // Vehicle Entry Components
     private JComboBox<String> categoryCombo;
     private JTextField parkIdField;
 
-    // Vehicle Exit Components (Day 3)
+    // Vehicle Exit Components
     private JTextField exitIdField;
 
-    // Status Message & Stack Display (Day 3)
+    // Search Component (Day 4)
+    private JTextField searchIdField;
+
+    // Status Message & Stack Activity Display
     private JLabel messageLabel;
     private JLabel stackActivityLabel;
 
     // 2D Array references for the 30 parking spaces
     private JPanel[][] spotPanels;
     private JLabel[][] spotStatusLabels;
+
+    // Highlighting for searched vehicle (Day 4)
+    private int highlightedRow = -1;
+    private int highlightedCol = -1;
 
     public ParkingGUI() {
         manager = new ParkingManager();
@@ -40,13 +48,13 @@ public class ParkingGUI extends JFrame {
     private void initUI() {
         // Window Configuration
         setTitle("Smart Parking Finder");
-        setSize(1020, 820);
+        setSize(1040, 850);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
-        setLayout(new BorderLayout(15, 15));
+        setLayout(new BorderLayout(15, 12));
         getContentPane().setBackground(new Color(245, 247, 250));
 
-        // 1. Top Section: Header + Dashboard + Legend + Actions + Activity Banner
+        // 1. Top Section: Header + Dashboard + Legend + Control Toolbar + Activity Banner
         JPanel topContainer = new JPanel();
         topContainer.setLayout(new BoxLayout(topContainer, BoxLayout.Y_AXIS));
         topContainer.setBackground(new Color(245, 247, 250));
@@ -66,9 +74,9 @@ public class ParkingGUI extends JFrame {
         topContainer.add(titleLabel);
         topContainer.add(Box.createVerticalStrut(3));
         topContainer.add(subtitleLabel);
-        topContainer.add(Box.createVerticalStrut(12));
+        topContainer.add(Box.createVerticalStrut(10));
 
-        // Dashboard displaying 4 Statistics Cards (including Waiting Queue)
+        // Dashboard displaying 4 Statistics Cards
         JPanel dashboardPanel = new JPanel(new GridLayout(1, 4, 12, 0));
         dashboardPanel.setBackground(new Color(245, 247, 250));
 
@@ -80,7 +88,7 @@ public class ParkingGUI extends JFrame {
         dashboardPanel.add(createStatCard("Total Spaces", totalValueLbl, new Color(59, 130, 246)));
         dashboardPanel.add(createStatCard("Occupied Spaces", occupiedValueLbl, new Color(239, 68, 68)));
         dashboardPanel.add(createStatCard("Available Spaces", availableValueLbl, new Color(16, 185, 129)));
-        dashboardPanel.add(createStatCard("Waiting Queue", waitingValueLbl, new Color(147, 51, 234))); // Purple for Queue
+        dashboardPanel.add(createStatCard("Waiting Queue", waitingValueLbl, new Color(147, 51, 234)));
 
         topContainer.add(dashboardPanel);
         topContainer.add(Box.createVerticalStrut(8));
@@ -95,9 +103,9 @@ public class ParkingGUI extends JFrame {
         topContainer.add(legendPanel);
         topContainer.add(Box.createVerticalStrut(10));
 
-        // Actions & Controls Card (Entry, Exit & Recent Activity Stack)
-        JPanel actionCard = createActionCard();
-        topContainer.add(actionCard);
+        // Operation Controls Card (Park, Exit, Search & Selection Sort)
+        JPanel operationsCard = createOperationsCard();
+        topContainer.add(operationsCard);
 
         add(topContainer, BorderLayout.NORTH);
 
@@ -117,50 +125,43 @@ public class ParkingGUI extends JFrame {
         setVisible(true);
     }
 
-    // Creates the Controls Card for Parking, Exiting, and Stack Activity (Day 3)
-    private JPanel createActionCard() {
+    // Creates the unified Operations Card with Park, Exit, Search & Sort
+    private JPanel createOperationsCard() {
         JPanel card = new JPanel(new BorderLayout(8, 8));
         card.setBackground(Color.WHITE);
         card.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(new Color(226, 232, 240), 1, true),
-                new EmptyBorder(8, 14, 8, 14)
+                new EmptyBorder(10, 14, 10, 14)
         ));
 
-        // Top Row: Vehicle Entry and Vehicle Exit side-by-side
-        JPanel formsRow = new JPanel(new GridLayout(1, 2, 20, 0));
-        formsRow.setBackground(Color.WHITE);
+        // Top Toolbar: 3 Columns (Park, Exit, Search/Sort)
+        JPanel toolbar = new JPanel(new GridLayout(1, 3, 14, 0));
+        toolbar.setBackground(Color.WHITE);
 
-        // 1. Vehicle Entry Form
-        JPanel entryPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        entryPanel.setBackground(Color.WHITE);
+        // 1. PARK SECTION
+        JPanel parkSection = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        parkSection.setBackground(Color.WHITE);
 
-        JLabel entryTitle = new JLabel("Entry:");
-        entryTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
-        entryTitle.setForeground(new Color(30, 41, 59));
+        JLabel parkTitle = new JLabel("Park:");
+        parkTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
+        parkTitle.setForeground(new Color(30, 41, 59));
 
         String[] categories = {"Bike", "Car", "Truck"};
         categoryCombo = new JComboBox<>(categories);
         categoryCombo.setFont(new Font("SansSerif", Font.PLAIN, 12));
         categoryCombo.setBackground(Color.WHITE);
 
-        parkIdField = new JTextField(7);
+        parkIdField = new JTextField(6);
         parkIdField.setFont(new Font("SansSerif", Font.PLAIN, 12));
         parkIdField.setText("BK-101");
 
-        JButton parkButton = new JButton("Park Vehicle");
-        parkButton.setFont(new Font("SansSerif", Font.BOLD, 11));
-        parkButton.setBackground(new Color(37, 99, 235));
-        parkButton.setForeground(Color.WHITE);
-        parkButton.setFocusPainted(false);
-        parkButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
+        JButton parkButton = createStyledButton("Park", new Color(37, 99, 235));
         parkButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 handleParkVehicle();
             }
         });
-
         parkIdField.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -168,36 +169,29 @@ public class ParkingGUI extends JFrame {
             }
         });
 
-        entryPanel.add(entryTitle);
-        entryPanel.add(categoryCombo);
-        entryPanel.add(parkIdField);
-        entryPanel.add(parkButton);
+        parkSection.add(parkTitle);
+        parkSection.add(categoryCombo);
+        parkSection.add(parkIdField);
+        parkSection.add(parkButton);
 
-        // 2. Vehicle Exit Form (Day 3)
-        JPanel exitPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        exitPanel.setBackground(Color.WHITE);
+        // 2. EXIT SECTION
+        JPanel exitSection = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+        exitSection.setBackground(Color.WHITE);
 
         JLabel exitTitle = new JLabel("Exit:");
         exitTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
         exitTitle.setForeground(new Color(30, 41, 59));
 
-        exitIdField = new JTextField(8);
+        exitIdField = new JTextField(7);
         exitIdField.setFont(new Font("SansSerif", Font.PLAIN, 12));
 
-        JButton exitButton = new JButton("Exit Vehicle");
-        exitButton.setFont(new Font("SansSerif", Font.BOLD, 11));
-        exitButton.setBackground(new Color(220, 38, 38)); // Danger red
-        exitButton.setForeground(Color.WHITE);
-        exitButton.setFocusPainted(false);
-        exitButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
+        JButton exitButton = createStyledButton("Exit", new Color(220, 38, 38));
         exitButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 handleExitVehicle();
             }
         });
-
         exitIdField.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -205,19 +199,58 @@ public class ParkingGUI extends JFrame {
             }
         });
 
-        exitPanel.add(exitTitle);
-        exitPanel.add(new JLabel("ID:"));
-        exitPanel.add(exitIdField);
-        exitPanel.add(exitButton);
+        exitSection.add(exitTitle);
+        exitSection.add(new JLabel("ID:"));
+        exitSection.add(exitIdField);
+        exitSection.add(exitButton);
 
-        formsRow.add(entryPanel);
-        formsRow.add(exitPanel);
+        // 3. SEARCH & SELECTION SORT SECTION (Day 4)
+        JPanel searchSection = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        searchSection.setBackground(Color.WHITE);
 
-        // Bottom section: Status Feedback and Recent Activity from Stack
-        JPanel infoPanel = new JPanel(new GridLayout(2, 1, 2, 2));
-        infoPanel.setBackground(Color.WHITE);
+        JLabel searchTitle = new JLabel("Find:");
+        searchTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
+        searchTitle.setForeground(new Color(30, 41, 59));
 
-        messageLabel = new JLabel("Ready. Enter vehicle information to park or remove vehicles.");
+        searchIdField = new JTextField(7);
+        searchIdField.setFont(new Font("SansSerif", Font.PLAIN, 12));
+
+        JButton searchButton = createStyledButton("Search", new Color(13, 148, 136)); // Teal
+        searchButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                handleSearchVehicle();
+            }
+        });
+        searchIdField.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                handleSearchVehicle();
+            }
+        });
+
+        JButton sortButton = createStyledButton("Sorted List", new Color(79, 70, 229)); // Indigo
+        sortButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                handleShowSortedRecords();
+            }
+        });
+
+        searchSection.add(searchTitle);
+        searchSection.add(searchIdField);
+        searchSection.add(searchButton);
+        searchSection.add(sortButton);
+
+        toolbar.add(parkSection);
+        toolbar.add(exitSection);
+        toolbar.add(searchSection);
+
+        // Bottom Feedback Bar: Status Message & Stack History
+        JPanel feedbackPanel = new JPanel(new GridLayout(2, 1, 2, 2));
+        feedbackPanel.setBackground(Color.WHITE);
+
+        messageLabel = new JLabel("Ready. Use Park, Exit, or Search above.");
         messageLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
         messageLabel.setForeground(new Color(71, 85, 105));
 
@@ -225,17 +258,29 @@ public class ParkingGUI extends JFrame {
         stackActivityLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
         stackActivityLabel.setForeground(new Color(100, 116, 139));
 
-        infoPanel.add(messageLabel);
-        infoPanel.add(stackActivityLabel);
+        feedbackPanel.add(messageLabel);
+        feedbackPanel.add(stackActivityLabel);
 
-        card.add(formsRow, BorderLayout.NORTH);
-        card.add(infoPanel, BorderLayout.SOUTH);
+        card.add(toolbar, BorderLayout.NORTH);
+        card.add(feedbackPanel, BorderLayout.SOUTH);
 
         return card;
     }
 
-    // Handles parking vehicle allocation & waiting queue
+    // Button Styling Helper
+    private JButton createStyledButton(String text, Color bg) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        btn.setBackground(bg);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return btn;
+    }
+
+    // Handles Vehicle Parking
     private void handleParkVehicle() {
+        clearHighlight();
         String category = (String) categoryCombo.getSelectedItem();
         String vehicleId = parkIdField.getText().trim();
 
@@ -252,14 +297,13 @@ public class ParkingGUI extends JFrame {
             messageLabel.setForeground(new Color(220, 38, 38));
         } else if (result.equals("QUEUED")) {
             messageLabel.setText("ⓘ " + category + " Zone is full! Vehicle [" + vehicleId + "] added to Waiting Queue (Waiting: " + manager.getWaitingQueueCount() + ").");
-            messageLabel.setForeground(new Color(147, 51, 234)); // Purple for Queue
+            messageLabel.setForeground(new Color(147, 51, 234));
             parkIdField.setText("");
             refreshGUI();
         } else if (result.equals("INVALID")) {
             messageLabel.setText("⚠ Invalid vehicle category selected.");
             messageLabel.setForeground(new Color(220, 38, 38));
         } else {
-            // Successfully allocated
             int distance = manager.getLastAllocatedDistance();
             messageLabel.setText("✓ Success: " + category + " [" + vehicleId + "] parked at space " + result + " (Manhattan Distance: " + distance + ")");
             messageLabel.setForeground(new Color(21, 128, 61));
@@ -269,8 +313,9 @@ public class ParkingGUI extends JFrame {
         }
     }
 
-    // Handles vehicle exit and queue allocation (Day 3)
+    // Handles Vehicle Exit
     private void handleExitVehicle() {
+        clearHighlight();
         String vehicleId = exitIdField.getText().trim();
 
         if (vehicleId.isEmpty()) {
@@ -292,17 +337,95 @@ public class ParkingGUI extends JFrame {
         }
     }
 
+    // Handles Vehicle Search (Day 4: Binary Search on Sorted Records)
+    private void handleSearchVehicle() {
+        clearHighlight();
+        String searchId = searchIdField.getText().trim();
+
+        if (searchId.isEmpty()) {
+            messageLabel.setText("⚠ Please enter a Vehicle ID to search.");
+            messageLabel.setForeground(new Color(220, 38, 38));
+            return;
+        }
+
+        // 1. Search in parked vehicles using Binary Search
+        ParkingManager.ParkingRecord record = manager.searchVehicle(searchId);
+
+        if (record != null) {
+            highlightedRow = record.getRow();
+            highlightedCol = record.getCol();
+            updateSpotCard(highlightedRow, highlightedCol);
+
+            messageLabel.setText("✓ Found: " + record.getCategory() + " [" + record.getVehicleId() 
+                    + "] is currently parked at space " + record.getSpotId() + " (Row " + (highlightedRow + 1) + ", Col " + (highlightedCol + 1) + ")!");
+            messageLabel.setForeground(new Color(13, 148, 136));
+            return;
+        }
+
+        // 2. Check if vehicle is in the Waiting Queue
+        int queuePos = manager.getWaitingPosition(searchId);
+        if (queuePos != -1) {
+            messageLabel.setText("ⓘ Vehicle [" + searchId + "] is not parked yet — it is currently waiting in the Queue (Position #" + queuePos + ").");
+            messageLabel.setForeground(new Color(147, 51, 234));
+            return;
+        }
+
+        // 3. Not found anywhere
+        messageLabel.setText("⚠ Vehicle ID '" + searchId + "' was not found in the parking lot or waiting queue.");
+        messageLabel.setForeground(new Color(220, 38, 38));
+    }
+
+    // Handles displaying Selection Sorted Records (Day 4)
+    private void handleShowSortedRecords() {
+        List<ParkingManager.ParkingRecord> sortedList = manager.getSortedOccupiedRecords();
+
+        if (sortedList.isEmpty()) {
+            JOptionPane.showMessageDialog(this, 
+                    "No vehicles are currently parked in the parking lot.", 
+                    "Sorted Records (Selection Sort)", 
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Occupied Parking Records (Sorted Alphabetically by Vehicle ID):\n");
+        sb.append("----------------------------------------------------------------------\n");
+        int index = 1;
+        for (ParkingManager.ParkingRecord r : sortedList) {
+            sb.append(String.format("%2d. Vehicle ID: %-10s | Category: %-6s | Space: %s\n", 
+                    index++, r.getVehicleId(), r.getCategory(), r.getSpotId()));
+        }
+        sb.append("----------------------------------------------------------------------\n");
+        sb.append("Total Occupied: ").append(sortedList.size()).append(" spaces.\n");
+        sb.append("Sorted using: Selection Sort Algorithm O(N^2)");
+
+        JTextArea textArea = new JTextArea(sb.toString());
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        textArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(460, 240));
+
+        JOptionPane.showMessageDialog(this, scrollPane, "Sorted Parking Records (Selection Sort)", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // Clears any highlighted search spot
+    private void clearHighlight() {
+        if (highlightedRow != -1 && highlightedCol != -1) {
+            int oldR = highlightedRow;
+            int oldC = highlightedCol;
+            highlightedRow = -1;
+            highlightedCol = -1;
+            updateSpotCard(oldR, oldC);
+        }
+    }
+
     // Refresh Dashboard counters, Stack activity, and Parking Space cards
     private void refreshGUI() {
-        // Update Dashboard Counters
         occupiedValueLbl.setText(String.valueOf(manager.getOccupiedSpaces()));
         availableValueLbl.setText(String.valueOf(manager.getAvailableSpaces()));
         waitingValueLbl.setText(String.valueOf(manager.getWaitingQueueCount()));
-
-        // Update Stack Recent Activity (LIFO)
         stackActivityLabel.setText("Recent Activity (Stack LIFO): " + manager.getRecentActivity());
 
-        // Update each of the 30 Grid Space Cards
         for (int r = 0; r < manager.getRows(); r++) {
             for (int c = 0; c < manager.getCols(); c++) {
                 updateSpotCard(r, c);
@@ -310,15 +433,27 @@ public class ParkingGUI extends JFrame {
         }
     }
 
-    // Updates a single spot card's display
+    // Updates a single spot card's display (including search highlight)
     private void updateSpotCard(int row, int col) {
         String status = manager.getSpotStatus(row, col);
         boolean occupied = manager.isSpotOccupied(row, col);
         String zone = manager.getZone(row, col);
 
+        // Highlight searched spot if matched
+        if (row == highlightedRow && col == highlightedCol) {
+            spotStatusLabels[row][col].setText("[ " + status + " ★ ]");
+            spotStatusLabels[row][col].setForeground(new Color(180, 83, 9)); // Amber
+            spotPanels[row][col].setBackground(new Color(254, 240, 138));    // Bright yellow highlight
+            spotPanels[row][col].setBorder(BorderFactory.createCompoundBorder(
+                    new LineBorder(new Color(234, 179, 8), 2, true),
+                    new EmptyBorder(7, 7, 7, 7)
+            ));
+            return;
+        }
+
         if (occupied) {
             spotStatusLabels[row][col].setText("[ " + status + " ]");
-            spotStatusLabels[row][col].setForeground(new Color(185, 28, 28)); // Dark red text for occupied
+            spotStatusLabels[row][col].setForeground(new Color(185, 28, 28)); // Dark red text
             spotPanels[row][col].setBackground(new Color(254, 226, 226));    // Soft red alert background
             spotPanels[row][col].setBorder(BorderFactory.createCompoundBorder(
                     new LineBorder(new Color(239, 68, 68), 1, true),
@@ -396,7 +531,6 @@ public class ParkingGUI extends JFrame {
                 new EmptyBorder(8, 8, 8, 8)
         ));
 
-        // Colors based on parking zone
         Color bgColor;
         Color headerColor;
 
@@ -413,17 +547,14 @@ public class ParkingGUI extends JFrame {
 
         spotCard.setBackground(bgColor);
 
-        // Spot ID Label (e.g. B1, C1, T1)
         JLabel idLabel = new JLabel(spotId, SwingConstants.CENTER);
         idLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
         idLabel.setForeground(headerColor);
 
-        // Zone Name Label
         JLabel zoneLabel = new JLabel(zone, SwingConstants.CENTER);
         zoneLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
         zoneLabel.setForeground(new Color(71, 85, 105));
 
-        // Status Label ("EMPTY" or Vehicle ID)
         JLabel statusLabel = new JLabel("[ " + status + " ]", SwingConstants.CENTER);
         statusLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
         statusLabel.setForeground(new Color(100, 116, 139));
@@ -432,7 +563,6 @@ public class ParkingGUI extends JFrame {
         spotCard.add(zoneLabel);
         spotCard.add(statusLabel);
 
-        // Store references in 2D arrays for easy dynamic updates
         spotPanels[row][col] = spotCard;
         spotStatusLabels[row][col] = statusLabel;
 
