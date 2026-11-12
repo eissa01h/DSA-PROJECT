@@ -2,7 +2,7 @@
 
 A Java Swing-based Parking Lot Simulation System developed for Data Structures and Algorithms (DSA).
 
-## Project Overview (Day 3 - 75% Milestone)
+## Project Overview 
 - **GUI:** Minimalist, clean Java Swing interface with real-time dynamic dashboard.
 - **Layout:** $5 \times 6$ parking grid representing 30 parking spaces.
 - **Data Structures:**
