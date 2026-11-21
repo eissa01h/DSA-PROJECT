@@ -46,6 +46,7 @@ public class Parking3DApp extends Application {
         }
     }
     private final Queue<SpawnRequest> pendingSpawnQueue = new LinkedList<>();
+    private final Queue<String> pendingExitQueue = new LinkedList<>();
 
     // UI Dashboard Labels
     private Label totalSpacesVal;
@@ -71,7 +72,7 @@ public class Parking3DApp extends Application {
     private boolean autoSimRunning = false;
     private boolean autoSimPaused = false;
     private double simTimer = 0.0;
-    private double spawnInterval = 2.4; // seconds between auto arrivals
+    private double spawnInterval = 3.6; // seconds between auto arrivals (ample headway)
     private double simSpeed = 1.0;
     private int autoIdCounter = 101;
 
@@ -532,10 +533,13 @@ public class Parking3DApp extends Application {
                     // 1. Update vehicle physics, navigation, and collision avoidance
                     updateVehicleMovements(dt);
 
-                    // 2. Process arrivals one at a time when entrance runway is clear
+                    // 2. Process orderly single-vehicle exits from queue
+                    processPendingExits();
+
+                    // 3. Process arrivals one at a time when entrance runway is clear
                     processPendingSpawns();
 
-                    // 3. Auto Simulation Spawner
+                    // 4. Auto Simulation Spawner
                     if (autoSimRunning) {
                         simTimer += dt * simSpeed;
                         if (simTimer >= spawnInterval) {
@@ -550,15 +554,47 @@ public class Parking3DApp extends Application {
     }
 
     /**
-     * Checks if the entrance roadway is clear so the next vehicle can arrive without overlapping.
+     * Checks if the entrance roadway and approach are clear so arriving vehicles never overlap.
      */
     private boolean isEntranceClear() {
         for (Vehicle3D v : movingVehicles) {
-            if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT && v.getX() < 120.0 && v.getZ() < 0.0) {
+            if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT) {
+                // Must be well clear of entrance approach & initial merge before next spawn
+                if (v.getX() < 120.0 || (v.getZ() < -50.0 && v.getX() < 180.0)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Checks if a specific aisle (0 for Bikes, 1 for Cars, 2 for Trucks) is clear of moving traffic.
+     */
+    private boolean isAisleClear(int aisleIndex, Vehicle3D ignoreVehicle) {
+        if (aisleIndex < 0 || aisleIndex >= PathPlanner.AISLE_X.length) return true;
+        double aisleX = PathPlanner.AISLE_X[aisleIndex];
+        for (Vehicle3D v : movingVehicles) {
+            if (v == ignoreVehicle) continue;
+            // Any vehicle driving or maneuvering in this aisle corridor
+            if (Math.abs(v.getX() - aisleX) < 70.0 && v.getZ() >= -70.0 && v.getZ() <= 570.0) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * Processes pending exits one by one so only one vehicle navigates the exit corridor at a time.
+     */
+    private void processPendingExits() {
+        if (pendingExitQueue.isEmpty() || isAnyVehicleExiting()) {
+            return;
+        }
+        String exitId = pendingExitQueue.poll();
+        if (exitId != null) {
+            executeVehicleExit(exitId);
+        }
     }
 
     /**
@@ -669,50 +705,65 @@ public class Parking3DApp extends Application {
                 needExitOpen = true;
             }
 
-            // Multi-Stage Anti-Collision & Yielding System
             boolean yield = false;
-            for (int j = 0; j < movingVehicles.size(); j++) {
-                if (i == j) continue;
-                Vehicle3D other = movingVehicles.get(j);
 
-                double dist = Math.hypot(other.getX() - v.getX(), other.getZ() - v.getZ());
-                double safeDist = (v.getCategory().equalsIgnoreCase("Truck") || other.getCategory().equalsIgnoreCase("Truck")) ? 90.0 : 72.0;
-
-                // 1. Critical Emergency Stop: too close in any direction
-                if (dist < 42.0) {
-                    if (v.getRemainingDistance() >= other.getRemainingDistance()) {
-                        yield = true;
-                        break;
+            // 1. Aisle Hold Gate for Entering Vehicles on North Road:
+            // If v is traveling on North Road (Z < -50) approaching its assigned aisle,
+            // hold right before the aisle entrance if another vehicle is maneuvering in that aisle!
+            if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT && v.getZ() < -50.0) {
+                int targetAisle = v.getAssignedCol() / 2;
+                double targetAisleX = PathPlanner.AISLE_X[targetAisle];
+                if (v.getX() >= (targetAisleX - 70.0) && v.getX() <= targetAisleX) {
+                    if (!isAisleClear(targetAisle, v)) {
+                        yield = true; // Hold on North Road before entering aisle
                     }
                 }
+            }
 
-                // 2. Aisle Clearance: if v is just backing out of stall into aisle, yield if other is driving in that aisle
-                if (v.getState() == Vehicle3D.State.EXITING && v.getCurrentTargetIndex() <= 1) {
-                    if (Math.abs(other.getX() - v.getX()) < 80.0 && Math.abs(other.getZ() - v.getZ()) < 110.0) {
-                        yield = true; // wait inside stall until aisle is clear
-                        break;
+            // 2. Dynamic Inter-Vehicle Collision Avoidance Check
+            if (!yield) {
+                for (int j = 0; j < movingVehicles.size(); j++) {
+                    if (i == j) continue;
+                    Vehicle3D other = movingVehicles.get(j);
+
+                    double dx = other.getX() - v.getX();
+                    double dz = other.getZ() - v.getZ();
+                    double dist = Math.hypot(dx, dz);
+
+                    // Category-based true physical length
+                    double lenV = v.getCategory().equalsIgnoreCase("Truck") ? 88.0 : (v.getCategory().equalsIgnoreCase("Car") ? 54.0 : 38.0);
+                    double lenOther = other.getCategory().equalsIgnoreCase("Truck") ? 88.0 : (other.getCategory().equalsIgnoreCase("Car") ? 54.0 : 38.0);
+                    double minSafetyDist = (lenV + lenOther) * 0.5 + 24.0; // Bumper-to-bumper physical buffer
+
+                    // A. Hard Proximity Stop (Any angle)
+                    if (dist < minSafetyDist) {
+                        if (v.getRemainingDistance() >= other.getRemainingDistance()) {
+                            yield = true;
+                            break;
+                        }
                     }
-                }
 
-                // 3. South Perimeter Road Intersection Yield: aisle vehicles yield to vehicles already on South Road
-                if (v.getState() == Vehicle3D.State.EXITING && v.getZ() < 570.0 && v.getZ() > 490.0) {
-                    if (other.getZ() >= 560.0 && Math.abs(other.getX() - v.getX()) < 130.0) {
-                        yield = true; // wait at aisle mouth
-                        break;
-                    }
-                }
-
-                // 4. Safe Following Distance & Heading Collision Check
-                if (dist < safeDist) {
+                    // B. Safe Following Distance & Driving Corridor Check
                     double yawRad = Math.toRadians(v.getYaw());
                     double dirX = Math.sin(yawRad);
                     double dirZ = Math.cos(yawRad);
-                    double dot = (other.getX() - v.getX()) * dirX + (other.getZ() - v.getZ()) * dirZ;
 
-                    // other is in front or entering v's trajectory
-                    if (dot > -15.0) {
-                        if (dot > 15.0 || v.getRemainingDistance() >= other.getRemainingDistance()) {
-                            yield = true;
+                    double forwardDist = dx * dirX + dz * dirZ;
+                    double lateralDist = Math.abs(-dx * dirZ + dz * dirX);
+
+                    // If other is ahead of v within v's driving lane (lateral < 36 units)
+                    // and within following distance
+                    if (forwardDist > 0.0 && forwardDist < (minSafetyDist + 40.0) && lateralDist < 36.0) {
+                        yield = true; // Stop behind vehicle ahead
+                        break;
+                    }
+
+                    // C. South Perimeter Road Intersection Yield:
+                    // If v is at an aisle mouth approaching South Road (Z in [470, 575])
+                    // and other is already traveling along South Road (Z around 580)
+                    if (v.getZ() > 470.0 && v.getZ() < 575.0 && Math.abs(other.getZ() - 580.0) < 35.0) {
+                        if (Math.abs(other.getX() - v.getX()) < 140.0 && other.getX() <= v.getX() + 40.0) {
+                            yield = true; // Hold at aisle exit mouth until South Road is clear
                             break;
                         }
                     }
@@ -753,14 +804,14 @@ public class Parking3DApp extends Application {
      * Generates arriving vehicles and triggers orderly, non-colliding single exits.
      */
     private void handleAutoSpawn() {
-        // Trigger exit only if enough cars parked AND no other vehicle is currently exiting
-        if (activeVehicles.size() > 5 && !isAnyVehicleExiting() && random.nextDouble() < 0.28) {
+        // Trigger exit only if enough cars parked AND no other vehicle is currently exiting and exit queue is empty
+        if (activeVehicles.size() > 4 && !isAnyVehicleExiting() && pendingExitQueue.isEmpty() && random.nextDouble() < 0.28) {
             triggerRandomExit();
             return;
         }
 
         // Queue new arrival if queue isn't backed up
-        if (pendingSpawnQueue.size() < 3) {
+        if (pendingSpawnQueue.size() < 2) {
             String[] categories = { "Bike", "Car", "Truck" };
             String cat = categories[random.nextInt(categories.length)];
             String idPrefix = cat.equals("Bike") ? "BK" : (cat.equals("Car") ? "CR" : "TR");
@@ -786,10 +837,7 @@ public class Parking3DApp extends Application {
 
     /**
      * Core Vehicle Exit Pipeline:
-     * 1. Finds vehicle in ParkingManager.
-     * 2. Computes BFS route from Bay through Exit Gate & Runway.
-     * 3. Animates vehicle driving out smoothly.
-     * 4. Re-allocates freed spot if compatible vehicle is waiting in FIFO Queue!
+     * Enqueues or starts orderly single-vehicle exits so no vehicles ever pile up.
      */
     private void requestVehicleExit(String id) {
         Vehicle3D vehicle = activeVehicles.get(id);
@@ -797,6 +845,38 @@ public class Parking3DApp extends Application {
         if (vehicle != null && vehicle.getState() != Vehicle3D.State.PARKED) {
             statusMsgLbl.setText("⚠ Vehicle [" + id + "] is currently in transit and cannot exit until parked.");
             statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
+            return;
+        }
+
+        // If another vehicle is currently exiting or the exit queue is active, queue this exit
+        if (isAnyVehicleExiting() || !pendingExitQueue.isEmpty()) {
+            if (!pendingExitQueue.contains(id)) {
+                pendingExitQueue.offer(id);
+                statusMsgLbl.setText("ⓘ Vehicle [" + id + "] queued for exit (waiting for runway to clear).");
+                statusMsgLbl.setStyle("-fx-text-fill: #3B82F6; -fx-font-weight: bold;");
+            }
+            return;
+        }
+
+        executeVehicleExit(id);
+    }
+
+    /**
+     * Executes the actual physical exit when the road and aisle are clear.
+     */
+    private void executeVehicleExit(String id) {
+        Vehicle3D vehicle = activeVehicles.get(id);
+        if (vehicle == null || vehicle.getState() != Vehicle3D.State.PARKED) return;
+
+        int row = vehicle.getAssignedRow();
+        int col = vehicle.getAssignedCol();
+        int aisle = col / 2;
+
+        // If the aisle is not clear of moving vehicles, re-queue exit
+        if (!isAisleClear(aisle, vehicle)) {
+            if (!pendingExitQueue.contains(id)) {
+                pendingExitQueue.offer(id);
+            }
             return;
         }
 
@@ -808,20 +888,15 @@ public class Parking3DApp extends Application {
             return;
         }
 
-        if (vehicle != null && vehicle.getState() == Vehicle3D.State.PARKED) {
-            int row = vehicle.getAssignedRow();
-            int col = vehicle.getAssignedCol();
+        // 1. Compute BFS Exit Path to Exit Gate & Runway
+        List<PathPlanner.Waypoint> exitPath = pathPlanner.getExitPath(row, col);
+        vehicle.setPath(exitPath);
+        vehicle.setSpeed(115.0 * simSpeed);
+        vehicle.setState(Vehicle3D.State.EXITING);
+        movingVehicles.add(vehicle);
 
-            // 1. Compute BFS Exit Path to Exit Gate & Runway
-            List<PathPlanner.Waypoint> exitPath = pathPlanner.getExitPath(row, col);
-            vehicle.setPath(exitPath);
-            vehicle.setSpeed(120.0 * simSpeed);
-            vehicle.setState(Vehicle3D.State.EXITING);
-            movingVehicles.add(vehicle);
-
-            // Turn spot LED back to green
-            lot3DScene.setSpotStatus(row, col, false, false);
-        }
+        // Turn spot LED back to green
+        lot3DScene.setSpotStatus(row, col, false, false);
 
         // Check if a waiting vehicle was auto-promoted from Queue
         String waitingId = result.getAllocatedWaitingVehicleId();
@@ -830,7 +905,7 @@ public class Parking3DApp extends Application {
             if (result.getSpotId().startsWith("B")) cat = "Bike";
             else if (result.getSpotId().startsWith("T")) cat = "Truck";
 
-            // Enqueue promoted vehicle with its pre-allocated spotId (no duplicate error)
+            // Enqueue promoted vehicle with its pre-allocated spotId
             pendingSpawnQueue.offer(new SpawnRequest(cat, waitingId, getRandomColorForCategory(cat), result.getSpotId()));
         }
 
