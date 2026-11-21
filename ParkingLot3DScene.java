@@ -32,11 +32,11 @@ public class ParkingLot3DScene {
     private final Group root3D = new Group();
     private final PerspectiveCamera camera = new PerspectiveCamera(true);
 
-    // Camera Rig Transforms for Orbit and Zoom
-    private final Rotate cameraRotateX = new Rotate(-46, Rotate.X_AXIS);
-    private final Rotate cameraRotateY = new Rotate(-26, Rotate.Y_AXIS);
-    private final Translate cameraTranslate = new Translate(430, 0, 240); // Pivot around lot center
-    private final Translate cameraDistance = new Translate(0, 0, -1250);
+    // Camera Rig Transforms for Orbit and Zoom (Optimized framing to eliminate empty sky)
+    private final Rotate cameraRotateX = new Rotate(-52, Rotate.X_AXIS);
+    private final Rotate cameraRotateY = new Rotate(-24, Rotate.Y_AXIS);
+    private final Translate cameraTranslate = new Translate(430, 0, 220); // Centered on stalls
+    private final Translate cameraDistance = new Translate(0, 0, -1020);
 
     // Entrance and Exit boom barrier arms
     private Cylinder entranceBarrierArm;
@@ -498,12 +498,12 @@ public class ParkingLot3DScene {
 
     // Camera preset methods
     public void setCameraIsometric() {
-        cameraRotateX.setAngle(-46);
-        cameraRotateY.setAngle(-26);
+        cameraRotateX.setAngle(-52);
+        cameraRotateY.setAngle(-24);
         cameraTranslate.setX(430);
         cameraTranslate.setY(0);
-        cameraTranslate.setZ(240);
-        cameraDistance.setZ(-1250);
+        cameraTranslate.setZ(220);
+        cameraDistance.setZ(-1020);
     }
 
     public void setCameraTopDown() {

@@ -63,6 +63,7 @@ public class Parking3DApp extends Application {
     private TextField exitIdField;
     private TextField searchIdField;
     private Button startSimBtn;
+    private Button topStartSimBtn;
     private Button pauseSimBtn;
     private Slider speedSlider;
 
@@ -110,7 +111,7 @@ public class Parking3DApp extends Application {
         root.setStyle("-fx-background-color: #0F172A;");
 
         // 2. 3D SubScene (Interactive 3D Viewport)
-        SubScene subScene3D = new SubScene(lot3DScene.getRoot3D(), 1100, 640, true, SceneAntialiasing.BALANCED);
+        SubScene subScene3D = new SubScene(lot3DScene.getRoot3D(), 1050, 560, true, SceneAntialiasing.BALANCED);
         subScene3D.setCamera(lot3DScene.getCamera());
         setupSubSceneMouseControls(subScene3D);
 
@@ -134,57 +135,120 @@ public class Parking3DApp extends Application {
         VBox rightWaitingPanel = createRightWaitingDrawer();
         root.setRight(rightWaitingPanel);
 
-        // 6. Main Scene & Window setup
-        Scene scene = new Scene(root, 1380, 890);
+        // 6. Main Scene & Window setup (Auto-sized to fit screen visual bounds)
+        javafx.geometry.Rectangle2D screenBounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+        double targetW = Math.min(1240, screenBounds.getWidth() * 0.95);
+        double targetH = Math.min(710, screenBounds.getHeight() * 0.92);
+
+        Scene scene = new Scene(root, targetW, targetH);
+
+        // Keyboard Shortcuts
+        scene.setOnKeyPressed(ke -> {
+            if (ke.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                if (!autoSimRunning) startAutoSimulation();
+                else pauseAutoSimulation();
+            } else if (ke.getCode() == javafx.scene.input.KeyCode.R) {
+                resetSimulation();
+            } else if (ke.getCode() == javafx.scene.input.KeyCode.DIGIT1) {
+                lot3DScene.setCameraIsometric();
+            } else if (ke.getCode() == javafx.scene.input.KeyCode.DIGIT2) {
+                lot3DScene.setCameraTopDown();
+            } else if (ke.getCode() == javafx.scene.input.KeyCode.DIGIT3) {
+                lot3DScene.setCameraEntrance();
+            }
+        });
+
         primaryStage.setTitle("Smart Parking Finder – 3D Simulation System (JavaFX 3D)");
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        // 7. Start 60 FPS Animation & Physics Loop
+        // 7. Initial vehicles parked in the lot
+        spawnParkedInitialVehicle("Car", "CR-101", carColors[0]);
+        spawnParkedInitialVehicle("Bike", "BK-101", bikeColors[0]);
+
+        // 8. Start 60 FPS Animation & Physics Loop
         startAnimationLoop();
+
+        // 9. Auto-start simulation after 0.6s so vehicles immediately arrive and drive
+        javafx.animation.PauseTransition autoStart = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
+        autoStart.setOnFinished(e -> startAutoSimulation());
+        autoStart.play();
 
         // Initial GUI sync
         refreshHUD();
     }
 
     /**
-     * Creates the HUD Dashboard pinned at the top:
-     * - App Title & Tagline
-     * - 4 KPI Stat Cards (Total, Occupied, Available, Waiting Queue)
-     * - Recent Activity Stack LIFO Banner
+     * Spawns an initial parked vehicle at application startup so spaces are occupied immediately.
+     */
+    private void spawnParkedInitialVehicle(String category, String id, Color color) {
+        String spotId = manager.parkVehicle(category, id);
+        if (!spotId.equals("DUPLICATE") && !spotId.equals("QUEUED") && !spotId.equals("INVALID")) {
+            int[] coords = manager.getSpotCoordinates(spotId);
+            if (coords != null) {
+                Vehicle3D vehicle = new Vehicle3D(category, id, color);
+                vehicle.setAssignedSpot(coords[0], coords[1], spotId);
+                double stallX = PathPlanner.COL_X[coords[1]];
+                double stallZ = PathPlanner.ROW_Z[coords[0]];
+                vehicle.setPosition(stallX, 0, stallZ);
+                vehicle.setState(Vehicle3D.State.PARKED);
+                if (coords[1] % 2 == 0) {
+                    vehicle.setYaw(-90);
+                } else {
+                    vehicle.setYaw(90);
+                }
+                activeVehicles.put(id, vehicle);
+                lot3DScene.getRoot3D().getChildren().add(vehicle);
+                lot3DScene.setSpotStatus(coords[0], coords[1], true, false);
+            }
+        }
+    }
+
+    /**
+     * Creates a compact, streamlined 2-row HUD Dashboard pinned at the top:
+     * - Row 1: App Title, Quick Start button, Live status message, Zone Legend pills
+     * - Row 2: Compact KPI counters (Total, Occupied, Available, Waiting Queue) + Recent Activity
      */
     private VBox createTopDashboard() {
-        VBox container = new VBox(6);
-        container.setPadding(new Insets(10, 16, 10, 16));
+        VBox container = new VBox(4);
+        container.setPadding(new Insets(5, 12, 5, 12));
         container.setStyle("-fx-background-color: #1E293B; -fx-border-color: #334155; -fx-border-width: 0 0 1 0;");
 
-        // Title row
-        HBox titleRow = new HBox(12);
-        titleRow.setAlignment(Pos.CENTER_LEFT);
+        // Row 1: Title, Quick Start, Status, Legends
+        HBox topRow = new HBox(10);
+        topRow.setAlignment(Pos.CENTER_LEFT);
 
-        Label title = new Label("SMART PARKING FINDER 3D");
-        title.setStyle("-fx-font-family: 'SansSerif'; -fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
+        Label title = new Label("SMART PARKING 3D");
+        title.setStyle("-fx-font-family: 'SansSerif'; -fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
 
-        Label badge = new Label("3D SIMULATION • JAVA DSA");
-        badge.setStyle("-fx-background-color: #2563EB; -fx-text-fill: white; -fx-font-size: 10px; -fx-font-weight: bold; -fx-padding: 2 7 2 7; -fx-background-radius: 4;");
+        Label badge = new Label("JAVA DSA");
+        badge.setStyle("-fx-background-color: #2563EB; -fx-text-fill: white; -fx-font-size: 9px; -fx-font-weight: bold; -fx-padding: 2 6 2 6; -fx-background-radius: 4;");
+
+        topStartSimBtn = createStyledButton("▶ Start Auto Sim", "#2563EB");
+        topStartSimBtn.setOnAction(e -> {
+            if (!autoSimRunning) startAutoSimulation();
+            else pauseAutoSimulation();
+        });
+
+        statusMsgLbl = new Label("Ready. Auto-simulation starting...");
+        statusMsgLbl.setStyle("-fx-font-family: 'SansSerif'; -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        // Zone Legend pills
-        HBox legendBox = new HBox(10);
+        HBox legendBox = new HBox(6);
         legendBox.setAlignment(Pos.CENTER_RIGHT);
         legendBox.getChildren().addAll(
-                createLegendPill("Bike Zone (B1-B10)", "#0284C7"),
-                createLegendPill("Car Zone (C1-C10)", "#16A34A"),
-                createLegendPill("Truck Zone (T1-T10)", "#D97706")
+                createLegendPill("Bikes (Zone 1)", "#0284C7"),
+                createLegendPill("Cars (Zone 2)", "#16A34A"),
+                createLegendPill("Trucks (Zone 3)", "#D97706")
         );
 
-        titleRow.getChildren().addAll(title, badge, spacer, legendBox);
+        topRow.getChildren().addAll(title, badge, topStartSimBtn, statusMsgLbl, spacer, legendBox);
 
-        // 4 KPI Stat Cards
-        HBox cardsRow = new HBox(12);
-        cardsRow.setAlignment(Pos.CENTER);
+        // Row 2: Compact KPI Cards + Activity Ticker
+        HBox cardsRow = new HBox(8);
+        cardsRow.setAlignment(Pos.CENTER_LEFT);
 
         totalSpacesVal = new Label("30");
         occupiedSpacesVal = new Label("0");
@@ -192,43 +256,34 @@ public class Parking3DApp extends Application {
         waitingQueueVal = new Label("0");
 
         cardsRow.getChildren().addAll(
-                createKpiCard("TOTAL SPACES", totalSpacesVal, "#3B82F6"),
+                createKpiCard("TOTAL", totalSpacesVal, "#3B82F6"),
                 createKpiCard("OCCUPIED", occupiedSpacesVal, "#EF4444"),
                 createKpiCard("AVAILABLE", availableSpacesVal, "#10B981"),
-                createKpiCard("WAITING QUEUE (FIFO)", waitingQueueVal, "#A855F7")
+                createKpiCard("WAITING (FIFO)", waitingQueueVal, "#A855F7")
         );
-        HBox.setHgrow(cardsRow, Priority.ALWAYS);
-
-        // Activity and Status Bar
-        HBox statusRow = new HBox(15);
-        statusRow.setAlignment(Pos.CENTER_LEFT);
-
-        stackActivityLbl = new Label("Recent Activity (Stack LIFO): " + manager.getRecentActivity());
-        stackActivityLbl.setStyle("-fx-font-family: 'Monospaced'; -fx-font-size: 11px; -fx-text-fill: #94A3B8;");
 
         Region sp2 = new Region();
         HBox.setHgrow(sp2, Priority.ALWAYS);
 
-        statusMsgLbl = new Label("Ready. Start auto simulation or use manual controls.");
-        statusMsgLbl.setStyle("-fx-font-family: 'SansSerif'; -fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
+        stackActivityLbl = new Label("Activity: " + manager.getRecentActivity());
+        stackActivityLbl.setStyle("-fx-font-family: 'Monospaced'; -fx-font-size: 11px; -fx-text-fill: #94A3B8;");
 
-        statusRow.getChildren().addAll(stackActivityLbl, sp2, statusMsgLbl);
+        cardsRow.getChildren().addAll(sp2, stackActivityLbl);
 
-        container.getChildren().addAll(titleRow, cardsRow, statusRow);
+        container.getChildren().addAll(topRow, cardsRow);
         return container;
     }
 
     private Node createKpiCard(String title, Label valLbl, String colorHex) {
-        VBox card = new VBox(2);
-        card.setPadding(new Insets(6, 12, 6, 12));
+        HBox card = new HBox(5);
+        card.setPadding(new Insets(2, 8, 2, 8));
         card.setAlignment(Pos.CENTER_LEFT);
-        card.setStyle("-fx-background-color: #0F172A; -fx-background-radius: 6; -fx-border-color: #334155; -fx-border-radius: 6;");
-        HBox.setHgrow(card, Priority.ALWAYS);
+        card.setStyle("-fx-background-color: #0F172A; -fx-background-radius: 4; -fx-border-color: #334155; -fx-border-radius: 4;");
 
-        Label titleLbl = new Label(title);
+        Label titleLbl = new Label(title + ":");
         titleLbl.setStyle("-fx-font-size: 10px; -fx-text-fill: #94A3B8; -fx-font-weight: bold;");
 
-        valLbl.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: " + colorHex + ";");
+        valLbl.setStyle("-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: " + colorHex + ";");
 
         card.getChildren().addAll(titleLbl, valLbl);
         return card;
@@ -260,11 +315,11 @@ public class Parking3DApp extends Application {
      * - Camera Presets (Isometric, Top-Down, Entrance)
      */
     private VBox createBottomControls() {
-        VBox container = new VBox(8);
-        container.setPadding(new Insets(10, 16, 12, 16));
+        VBox container = new VBox(4);
+        container.setPadding(new Insets(4, 10, 5, 10));
         container.setStyle("-fx-background-color: #1E293B; -fx-border-color: #334155; -fx-border-width: 1 0 0 0;");
 
-        HBox toolbar = new HBox(16);
+        HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         // 1. Auto Simulation Section
@@ -385,9 +440,9 @@ public class Parking3DApp extends Application {
      * - Real-time FIFO Waiting Queue list
      */
     private VBox createRightWaitingDrawer() {
-        VBox drawer = new VBox(8);
-        drawer.setPrefWidth(240);
-        drawer.setPadding(new Insets(10));
+        VBox drawer = new VBox(6);
+        drawer.setPrefWidth(200);
+        drawer.setPadding(new Insets(6));
         drawer.setStyle("-fx-background-color: #1E293B; -fx-border-color: #334155; -fx-border-width: 0 0 0 1;");
 
         Label title = new Label("Waiting Vehicles (FIFO)");
@@ -856,7 +911,12 @@ public class Parking3DApp extends Application {
         autoSimRunning = true;
         autoSimPaused = false;
         startSimBtn.setDisable(true);
+        if (topStartSimBtn != null) {
+            topStartSimBtn.setText("⏸ Pause");
+            topStartSimBtn.setStyle("-fx-background-color: #D97706; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px; -fx-cursor: hand; -fx-background-radius: 4;");
+        }
         pauseSimBtn.setDisable(false);
+        pauseSimBtn.setText("⏸ Pause");
         statusMsgLbl.setText("▶ Auto simulation running. Spawning arriving vehicles...");
         statusMsgLbl.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold;");
     }
@@ -864,10 +924,18 @@ public class Parking3DApp extends Application {
     private void pauseAutoSimulation() {
         if (!autoSimPaused) {
             autoSimPaused = true;
+            if (topStartSimBtn != null) {
+                topStartSimBtn.setText("▶ Resume");
+                topStartSimBtn.setStyle("-fx-background-color: #2563EB; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px; -fx-cursor: hand; -fx-background-radius: 4;");
+            }
             pauseSimBtn.setText("▶ Resume");
             statusMsgLbl.setText("⏸ Simulation paused.");
         } else {
             autoSimPaused = false;
+            if (topStartSimBtn != null) {
+                topStartSimBtn.setText("⏸ Pause");
+                topStartSimBtn.setStyle("-fx-background-color: #D97706; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px; -fx-cursor: hand; -fx-background-radius: 4;");
+            }
             pauseSimBtn.setText("⏸ Pause");
             statusMsgLbl.setText("▶ Simulation resumed.");
         }
@@ -877,6 +945,10 @@ public class Parking3DApp extends Application {
         autoSimRunning = false;
         autoSimPaused = false;
         startSimBtn.setDisable(false);
+        if (topStartSimBtn != null) {
+            topStartSimBtn.setText("▶ Start Auto Sim");
+            topStartSimBtn.setStyle("-fx-background-color: #2563EB; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px; -fx-cursor: hand; -fx-background-radius: 4;");
+        }
         pauseSimBtn.setDisable(true);
         pauseSimBtn.setText("⏸ Pause");
 
