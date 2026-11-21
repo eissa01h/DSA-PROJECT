@@ -124,9 +124,11 @@ public class PathPlanner {
 
         addWaypoint("SOUTH_MERGE", 860.0, 0, SOUTH_ROAD_Z);
         addWaypoint("EXIT_GATE", EXIT_X, 0, SOUTH_ROAD_Z);
+        addWaypoint("EXIT_RUNWAY", EXIT_X + 110.0, 0, SOUTH_ROAD_Z);
 
         addEdge("SOUTH_AISLE_2", "SOUTH_MERGE");
         addEdge("SOUTH_MERGE", "EXIT_GATE");
+        addEdge("EXIT_GATE", "EXIT_RUNWAY");
     }
 
     public static String getSpotNodeId(int row, int col) {
@@ -194,7 +196,7 @@ public class PathPlanner {
      * Helper to get full path for exiting a vehicle from spot (row, col)
      */
     public List<Waypoint> getExitPath(int row, int col) {
-        return findPath(getSpotNodeId(row, col), "EXIT_GATE");
+        return findPath(getSpotNodeId(row, col), "EXIT_RUNWAY");
     }
 
     public Waypoint getSpotWaypoint(int row, int col) {

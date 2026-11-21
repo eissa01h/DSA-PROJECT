@@ -285,9 +285,9 @@ public class ParkingLot3DScene {
         lineBack.setTranslateY(-1.3);
         lineBack.setTranslateZ(z);
 
-        // 3. Concrete Wheel Stop
+        // 3. Concrete Wheel Stop (perpendicular to stall entry along Z)
         PhongMaterial wheelStopMat = new PhongMaterial(Color.rgb(200, 205, 215));
-        Box wheelStop = new Box(w * 0.7, 3.5, 5);
+        Box wheelStop = new Box(4.0, 3.5, d * 0.55);
         wheelStop.setMaterial(wheelStopMat);
         double stopX = (col % 2 == 0) ? (x - w * 0.35) : (x + w * 0.35);
         wheelStop.setTranslateX(stopX);
@@ -546,3 +546,4 @@ public class ParkingLot3DScene {
         cameraDistance.setZ(newZ);
     }
 }
+

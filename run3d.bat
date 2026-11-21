@@ -11,3 +11,4 @@ if errorlevel 1 (
     echo Application exited with an error. Press any key to exit.
     pause >nul
 )
+

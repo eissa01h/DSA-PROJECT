@@ -103,10 +103,12 @@ public class Vehicle3D extends Group {
 
     public void setPath(List<PathPlanner.Waypoint> newPath) {
         this.path = newPath;
-        this.currentTargetIndex = 0;
         if (newPath != null && !newPath.isEmpty()) {
             PathPlanner.Waypoint first = newPath.get(0);
             setPosition(first.x, first.y, first.z);
+            this.currentTargetIndex = (newPath.size() > 1) ? 1 : 0;
+        } else {
+            this.currentTargetIndex = 0;
         }
     }
 
@@ -131,6 +133,7 @@ public class Vehicle3D extends Group {
     public double getX() { return currentX; }
     public double getY() { return currentY; }
     public double getZ() { return currentZ; }
+    public double getYaw() { return currentYaw; }
 
     public void setHighlighted(boolean h) {
         this.highlighted = h;
@@ -243,7 +246,37 @@ public class Vehicle3D extends Group {
 
         getChildren().addAll(hl1, hl2, tl1, tl2);
 
-        // 8. 4 Wheels (radius: 4.8, thickness: 3.5)
+        // 8. Front Grille, Side Mirrors & Bumpers
+        Box grille = new Box(16, 4, 1.2);
+        grille.setMaterial(rimMat);
+        grille.setTranslateY(-9);
+        grille.setTranslateZ(24.6);
+
+        Box mirrorL = new Box(3.5, 2.0, 1.5);
+        mirrorL.setMaterial(bodyMat);
+        mirrorL.setTranslateX(-13.5);
+        mirrorL.setTranslateY(-15);
+        mirrorL.setTranslateZ(5);
+
+        Box mirrorR = new Box(3.5, 2.0, 1.5);
+        mirrorR.setMaterial(bodyMat);
+        mirrorR.setTranslateX(13.5);
+        mirrorR.setTranslateY(-15);
+        mirrorR.setTranslateZ(5);
+
+        Box frontBumper = new Box(28, 4, 2.5);
+        frontBumper.setMaterial(tireMat);
+        frontBumper.setTranslateY(-5);
+        frontBumper.setTranslateZ(24.5);
+
+        Box rearBumper = new Box(28, 4, 2.5);
+        rearBumper.setMaterial(tireMat);
+        rearBumper.setTranslateY(-5);
+        rearBumper.setTranslateZ(-24.5);
+
+        getChildren().addAll(grille, mirrorL, mirrorR, frontBumper, rearBumper);
+
+        // 9. 4 Wheels (radius: 4.8, thickness: 3.5)
         addWheel(-13.5, -4.8, 14, 4.8, 3.5, tireMat, rimMat);  // Front-Left
         addWheel(13.5, -4.8, 14, 4.8, 3.5, tireMat, rimMat);   // Front-Right
         addWheel(-13.5, -4.8, -14, 4.8, 3.5, tireMat, rimMat); // Rear-Left
@@ -308,7 +341,29 @@ public class Vehicle3D extends Group {
         exhaust.setTranslateX(4.2);
         exhaust.setTranslateY(-5);
         exhaust.setTranslateZ(-4);
-        getChildren().add(exhaust);
+
+        // Front Steering Fork
+        Cylinder forkL = new Cylinder(0.8, 12);
+        forkL.setMaterial(chromeMat);
+        forkL.getTransforms().add(new Rotate(15, Rotate.X_AXIS));
+        forkL.setTranslateX(-1.5);
+        forkL.setTranslateY(-9.5);
+        forkL.setTranslateZ(8.5);
+
+        Cylinder forkR = new Cylinder(0.8, 12);
+        forkR.setMaterial(chromeMat);
+        forkR.getTransforms().add(new Rotate(15, Rotate.X_AXIS));
+        forkR.setTranslateX(1.5);
+        forkR.setTranslateY(-9.5);
+        forkR.setTranslateZ(8.5);
+
+        // Rear Red Taillight
+        Box bikeTail = new Box(3, 2, 1);
+        bikeTail.setMaterial(new PhongMaterial(Color.rgb(230, 30, 30)));
+        bikeTail.setTranslateY(-12);
+        bikeTail.setTranslateZ(-11.5);
+
+        getChildren().addAll(exhaust, forkL, forkR, bikeTail);
 
         // 7. Two Large Slim Wheels (radius: 6.0, thickness: 2.2)
         addWheel(0, -6.0, 11, 6.0, 2.2, tireMat, chromeMat);  // Front
@@ -392,7 +447,48 @@ public class Vehicle3D extends Group {
         stack2.setTranslateX(15);
         stack2.setTranslateY(-26);
         stack2.setTranslateZ(11);
-        getChildren().addAll(stack1, stack2);
+
+        // Cab Door Side Windows
+        Box cabWinL = new Box(1.5, 8, 14);
+        cabWinL.setMaterial(glassMat);
+        cabWinL.setTranslateX(-16);
+        cabWinL.setTranslateY(-24);
+        cabWinL.setTranslateZ(24);
+
+        Box cabWinR = new Box(1.5, 8, 14);
+        cabWinR.setMaterial(glassMat);
+        cabWinR.setTranslateX(16);
+        cabWinR.setTranslateY(-24);
+        cabWinR.setTranslateZ(24);
+
+        // Cab Roof Amber Clearance Lights
+        PhongMaterial amberMat = new PhongMaterial(Color.rgb(245, 158, 11));
+        amberMat.setSpecularColor(Color.YELLOW);
+        Sphere mark1 = new Sphere(1.5);
+        mark1.setMaterial(amberMat);
+        mark1.setTranslateX(-9);
+        mark1.setTranslateY(-33);
+        mark1.setTranslateZ(34);
+
+        Sphere mark2 = new Sphere(1.5);
+        mark2.setMaterial(amberMat);
+        mark2.setTranslateX(0);
+        mark2.setTranslateY(-33);
+        mark2.setTranslateZ(34);
+
+        Sphere mark3 = new Sphere(1.5);
+        mark3.setMaterial(amberMat);
+        mark3.setTranslateX(9);
+        mark3.setTranslateY(-33);
+        mark3.setTranslateZ(34);
+
+        // Front Heavy-Duty Bumper
+        Box truckBumper = new Box(34, 5, 3);
+        truckBumper.setMaterial(tireMat);
+        truckBumper.setTranslateY(-5);
+        truckBumper.setTranslateZ(37);
+
+        getChildren().addAll(stack1, stack2, cabWinL, cabWinR, mark1, mark2, mark3, truckBumper);
 
         // 8. 6 Heavy Duty Wheels (radius: 6.8, thickness: 4.5)
         addWheel(-16, -6.8, 24, 6.8, 4.5, tireMat, chromeMat);  // Front-Left
@@ -494,7 +590,14 @@ public class Vehicle3D extends Group {
             }
         }
 
-        double step = speed * dt;
+        // Smooth deceleration when approaching final parking stall
+        double effectiveSpeed = speed;
+        if (state == State.DRIVING_TO_SPOT && currentTargetIndex == path.size() - 1) {
+            // Turning into parking bay: slow down to gentle parking speed
+            effectiveSpeed = Math.max(45.0, speed * 0.42);
+        }
+
+        double step = effectiveSpeed * dt;
         if (distance <= step) {
             // Reached waypoint
             setPosition(target.x, target.y, target.z);

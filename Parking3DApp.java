@@ -31,6 +31,22 @@ public class Parking3DApp extends Application {
     private final Map<String, Vehicle3D> activeVehicles = new HashMap<>();
     private final List<Vehicle3D> movingVehicles = new ArrayList<>();
 
+    // Spawning Queue: ensures vehicles spawn one at a time and never overlap at the entrance
+    private static class SpawnRequest {
+        final String category;
+        final String id;
+        final Color color;
+        final String preallocatedSpotId; // null if needs Manhattan search, or spotId if promoted from Queue
+
+        SpawnRequest(String category, String id, Color color, String preallocatedSpotId) {
+            this.category = category;
+            this.id = id;
+            this.color = color;
+            this.preallocatedSpotId = preallocatedSpotId;
+        }
+    }
+    private final Queue<SpawnRequest> pendingSpawnQueue = new LinkedList<>();
+
     // UI Dashboard Labels
     private Label totalSpacesVal;
     private Label occupiedSpacesVal;
@@ -461,15 +477,20 @@ public class Parking3DApp extends Application {
                 // Clamp delta time to avoid jumps
                 if (dt > 0.1) dt = 0.1;
 
-                // Update vehicle physics and waypoint navigation
-                updateVehicleMovements(dt);
+                if (!autoSimPaused) {
+                    // 1. Update vehicle physics, navigation, and collision avoidance
+                    updateVehicleMovements(dt);
 
-                // Auto Simulation Spawner
-                if (autoSimRunning && !autoSimPaused) {
-                    simTimer += dt * simSpeed;
-                    if (simTimer >= spawnInterval) {
-                        simTimer = 0.0;
-                        handleAutoSpawn();
+                    // 2. Process arrivals one at a time when entrance runway is clear
+                    processPendingSpawns();
+
+                    // 3. Auto Simulation Spawner
+                    if (autoSimRunning) {
+                        simTimer += dt * simSpeed;
+                        if (simTimer >= spawnInterval) {
+                            simTimer = 0.0;
+                            handleAutoSpawn();
+                        }
                     }
                 }
             }
@@ -478,50 +499,183 @@ public class Parking3DApp extends Application {
     }
 
     /**
-     * Updates physics and path navigation for all moving vehicles
+     * Checks if the entrance roadway is clear so the next vehicle can arrive without overlapping.
      */
-    private void updateVehicleMovements(double dt) {
-        Iterator<Vehicle3D> it = movingVehicles.iterator();
-        while (it.hasNext()) {
-            Vehicle3D v = it.next();
-            boolean finished = v.updateMovement(dt);
-
-            if (finished) {
-                if (v.getState() == Vehicle3D.State.PARKED) {
-                    // Spot reached and parked
-                    it.remove();
-                    lot3DScene.setSpotStatus(v.getAssignedRow(), v.getAssignedCol(), true, false);
-                    lot3DScene.setEntranceBarrierOpen(false);
-                    refreshHUD();
-                } else if (v.getState() == Vehicle3D.State.FINISHED) {
-                    // Exit reached and left the lot
-                    it.remove();
-                    activeVehicles.remove(v.getVehicleId());
-                    lot3DScene.getRoot3D().getChildren().remove(v);
-                    lot3DScene.setExitBarrierOpen(false);
-                    refreshHUD();
-                }
+    private boolean isEntranceClear() {
+        for (Vehicle3D v : movingVehicles) {
+            if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT && v.getX() < 120.0 && v.getZ() < 0.0) {
+                return false;
             }
+        }
+        return true;
+    }
+
+    /**
+     * Processes pending arrivals from the spawn queue one by one when the entrance is clear.
+     */
+    private void processPendingSpawns() {
+        if (pendingSpawnQueue.isEmpty() || !isEntranceClear()) {
+            return;
+        }
+
+        SpawnRequest req = pendingSpawnQueue.poll();
+        if (req == null) return;
+
+        if (req.preallocatedSpotId != null) {
+            // Already allocated in manager via Waiting Queue promotion!
+            executeVehicleArrival(req.category, req.id, req.color, req.preallocatedSpotId, true);
+        } else {
+            // Check & Allocate space with existing ParkingManager DSA logic
+            String result = manager.parkVehicle(req.category, req.id);
+
+            if (result.equals("DUPLICATE")) {
+                statusMsgLbl.setText("⚠ Vehicle ID '" + req.id + "' is already in the lot or queue!");
+                statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
+                return;
+            }
+
+            if (result.equals("QUEUED")) {
+                statusMsgLbl.setText("ⓘ " + req.category + " Zone is full! Vehicle [" + req.id + "] added to Waiting Queue.");
+                statusMsgLbl.setStyle("-fx-text-fill: #A855F7; -fx-font-weight: bold;");
+                refreshHUD();
+                return;
+            }
+
+            if (result.equals("INVALID")) {
+                statusMsgLbl.setText("⚠ Invalid category selected.");
+                statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
+                return;
+            }
+
+            executeVehicleArrival(req.category, req.id, req.color, result, false);
         }
     }
 
     /**
+     * Spawns 3D vehicle at the entrance and begins smooth animated navigation along road lanes.
+     */
+    private void executeVehicleArrival(String category, String id, Color color, String spotId, boolean isPromoted) {
+        int[] coords = manager.getSpotCoordinates(spotId);
+        if (coords == null) return;
+        int row = coords[0];
+        int col = coords[1];
+
+        // 1. Calculate BFS Waypoint Path from Entrance to Spot
+        List<PathPlanner.Waypoint> path = pathPlanner.getParkingPath(row, col);
+
+        // 2. Instantiate 3D vehicle
+        Vehicle3D vehicle = new Vehicle3D(category, id, color);
+        vehicle.setAssignedSpot(row, col, spotId);
+        vehicle.setPath(path);
+        vehicle.setSpeed(120.0 * simSpeed);
+        vehicle.setState(Vehicle3D.State.DRIVING_TO_SPOT);
+
+        // 3. Add to 3D scene and tracking collections
+        activeVehicles.put(id, vehicle);
+        movingVehicles.add(vehicle);
+        lot3DScene.getRoot3D().getChildren().add(vehicle);
+
+        if (isPromoted) {
+            statusMsgLbl.setText("✓ Waiting Queue Promotion: " + category + " [" + id + "] -> Space " + spotId);
+            statusMsgLbl.setStyle("-fx-text-fill: #A855F7; -fx-font-weight: bold;");
+        } else {
+            int dist = manager.getLastAllocatedDistance();
+            statusMsgLbl.setText("✓ " + category + " [" + id + "] -> Allocated Space " + spotId + " (Manhattan Dist: " + dist + ")");
+            statusMsgLbl.setStyle("-fx-text-fill: #10B981; -fx-font-weight: bold;");
+        }
+
+        refreshHUD();
+    }
+
+    /**
+     * Updates physics, path navigation, collision avoidance, and boom barrier automation
+     * for all moving vehicles at 60 FPS.
+     */
+    private void updateVehicleMovements(double dt) {
+        boolean needEntranceOpen = false;
+        boolean needExitOpen = false;
+
+        for (int i = 0; i < movingVehicles.size(); i++) {
+            Vehicle3D v = movingVehicles.get(i);
+
+            // Barrier proximity detection
+            if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT && v.getX() < 20.0 && v.getZ() < 0.0) {
+                needEntranceOpen = true;
+            }
+            if (v.getState() == Vehicle3D.State.EXITING && v.getX() > 860.0 && v.getZ() > 500.0) {
+                needExitOpen = true;
+            }
+
+            // Safe following distance (anti-collision on roads and aisles)
+            boolean yield = false;
+            for (int j = 0; j < movingVehicles.size(); j++) {
+                if (i == j) continue;
+                Vehicle3D other = movingVehicles.get(j);
+
+                double dist = Math.hypot(other.getX() - v.getX(), other.getZ() - v.getZ());
+                double safeDist = v.getCategory().equalsIgnoreCase("Truck") ? 80.0 : 60.0;
+
+                if (dist < safeDist) {
+                    double yawRad = Math.toRadians(v.getYaw());
+                    double dirX = Math.sin(yawRad);
+                    double dirZ = Math.cos(yawRad);
+                    double dot = (other.getX() - v.getX()) * dirX + (other.getZ() - v.getZ()) * dirZ;
+                    if (dot > 0) { // other vehicle is ahead in front of v
+                        yield = true;
+                        break;
+                    }
+                }
+            }
+
+            double effectiveDt = yield ? 0.0 : (dt * simSpeed);
+            boolean finished = v.updateMovement(effectiveDt);
+
+            if (finished) {
+                if (v.getState() == Vehicle3D.State.PARKED) {
+                    lot3DScene.setSpotStatus(v.getAssignedRow(), v.getAssignedCol(), true, false);
+                    refreshHUD();
+                }
+            }
+        }
+
+        // Clean up vehicles that reached final destination
+        Iterator<Vehicle3D> it = movingVehicles.iterator();
+        while (it.hasNext()) {
+            Vehicle3D v = it.next();
+            if (v.getState() == Vehicle3D.State.PARKED) {
+                it.remove();
+            } else if (v.getState() == Vehicle3D.State.FINISHED) {
+                it.remove();
+                activeVehicles.remove(v.getVehicleId());
+                lot3DScene.getRoot3D().getChildren().remove(v);
+                refreshHUD();
+            }
+        }
+
+        lot3DScene.setEntranceBarrierOpen(needEntranceOpen);
+        lot3DScene.setExitBarrierOpen(needExitOpen);
+    }
+
+    /**
      * Auto Simulation Spawner Logic:
-     * Spawns random incoming vehicles, and occasionally requests an exit
+     * Generates arriving vehicles and occasionally requests random exits
      */
     private void handleAutoSpawn() {
         // Occasionally trigger a vehicle exit if lot is moderately occupied
-        if (activeVehicles.size() > 5 && random.nextDouble() < 0.35) {
+        if (activeVehicles.size() > 4 && random.nextDouble() < 0.35) {
             triggerRandomExit();
             return;
         }
 
-        String[] categories = { "Bike", "Car", "Truck" };
-        String cat = categories[random.nextInt(categories.length)];
-        String idPrefix = cat.equals("Bike") ? "BK" : (cat.equals("Car") ? "CR" : "TR");
-        String id = idPrefix + "-" + (autoIdCounter++);
+        // Queue new arrival if queue isn't backed up
+        if (pendingSpawnQueue.size() < 4) {
+            String[] categories = { "Bike", "Car", "Truck" };
+            String cat = categories[random.nextInt(categories.length)];
+            String idPrefix = cat.equals("Bike") ? "BK" : (cat.equals("Car") ? "CR" : "TR");
+            String id = idPrefix + "-" + (autoIdCounter++);
 
-        spawnAndParkVehicle(cat, id, getRandomColorForCategory(cat));
+            pendingSpawnQueue.offer(new SpawnRequest(cat, id, getRandomColorForCategory(cat), null));
+        }
     }
 
     private void triggerRandomExit() {
@@ -539,74 +693,20 @@ public class Parking3DApp extends Application {
     }
 
     /**
-     * Core Vehicle Parking Pipeline:
-     * 1. Consults ParkingManager (Linear Search & Manhattan Distance).
-     * 2. If available, computes BFS route from Entrance to Bay.
-     * 3. Spawns 3D vehicle and animates smooth road navigation.
-     * 4. If full, adds to FIFO Queue.
-     */
-    private void spawnAndParkVehicle(String category, String id, Color color) {
-        String result = manager.parkVehicle(category, id);
-
-        if (result.equals("DUPLICATE")) {
-            statusMsgLbl.setText("⚠ Vehicle ID '" + id + "' is already in the lot or queue!");
-            statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
-            return;
-        }
-
-        if (result.equals("QUEUED")) {
-            statusMsgLbl.setText("ⓘ " + category + " Zone is full! Vehicle [" + id + "] added to Waiting Queue.");
-            statusMsgLbl.setStyle("-fx-text-fill: #A855F7; -fx-font-weight: bold;");
-            refreshHUD();
-            return;
-        }
-
-        if (result.equals("INVALID")) {
-            statusMsgLbl.setText("⚠ Invalid category selected.");
-            statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
-            return;
-        }
-
-        // Spot found! e.g. "B1", "C3", "T10"
-        int[] coords = manager.getSpotCoordinates(result);
-        if (coords == null) return;
-        int row = coords[0];
-        int col = coords[1];
-
-        // 1. Calculate BFS Waypoint Path from Entrance to Spot
-        List<PathPlanner.Waypoint> path = pathPlanner.getParkingPath(row, col);
-
-        // 2. Instantiate 3D vehicle
-        Vehicle3D vehicle = new Vehicle3D(category, id, color);
-        vehicle.setAssignedSpot(row, col, result);
-        vehicle.setPath(path);
-        vehicle.setSpeed(120.0 * simSpeed);
-        vehicle.setState(Vehicle3D.State.DRIVING_TO_SPOT);
-
-        // 3. Add to 3D scene and lists
-        activeVehicles.put(id, vehicle);
-        movingVehicles.add(vehicle);
-        lot3DScene.getRoot3D().getChildren().add(vehicle);
-
-        // Open entrance barrier
-        lot3DScene.setEntranceBarrierOpen(true);
-
-        int dist = manager.getLastAllocatedDistance();
-        statusMsgLbl.setText("✓ " + category + " [" + id + "] -> Allocated Space " + result + " (Manhattan Dist: " + dist + ")");
-        statusMsgLbl.setStyle("-fx-text-fill: #10B981; -fx-font-weight: bold;");
-
-        refreshHUD();
-    }
-
-    /**
      * Core Vehicle Exit Pipeline:
      * 1. Finds vehicle in ParkingManager.
-     * 2. Computes BFS route from Bay to Exit Gate.
-     * 3. Animate vehicle driving out.
+     * 2. Computes BFS route from Bay through Exit Gate & Runway.
+     * 3. Animates vehicle driving out smoothly.
      * 4. Re-allocates freed spot if compatible vehicle is waiting in FIFO Queue!
      */
     private void requestVehicleExit(String id) {
         Vehicle3D vehicle = activeVehicles.get(id);
+
+        if (vehicle != null && vehicle.getState() != Vehicle3D.State.PARKED) {
+            statusMsgLbl.setText("⚠ Vehicle [" + id + "] is currently in transit and cannot exit until parked.");
+            statusMsgLbl.setStyle("-fx-text-fill: #EF4444; -fx-font-weight: bold;");
+            return;
+        }
 
         ParkingManager.ExitResult result = manager.exitVehicle(id);
 
@@ -620,29 +720,26 @@ public class Parking3DApp extends Application {
             int row = vehicle.getAssignedRow();
             int col = vehicle.getAssignedCol();
 
-            // 1. Compute BFS Exit Path to Exit Gate
+            // 1. Compute BFS Exit Path to Exit Gate & Runway
             List<PathPlanner.Waypoint> exitPath = pathPlanner.getExitPath(row, col);
             vehicle.setPath(exitPath);
+            vehicle.setSpeed(120.0 * simSpeed);
             vehicle.setState(Vehicle3D.State.EXITING);
             movingVehicles.add(vehicle);
 
-            // Open exit barrier
-            lot3DScene.setExitBarrierOpen(true);
-
-            // Turn spot LED back to green (or keep for waiting car)
+            // Turn spot LED back to green
             lot3DScene.setSpotStatus(row, col, false, false);
         }
 
         // Check if a waiting vehicle was auto-promoted from Queue
         String waitingId = result.getAllocatedWaitingVehicleId();
         if (waitingId != null) {
-            // Find category
             String cat = "Car";
             if (result.getSpotId().startsWith("B")) cat = "Bike";
             else if (result.getSpotId().startsWith("T")) cat = "Truck";
 
-            // Spawn the promoted waiting vehicle
-            spawnAndParkVehicle(cat, waitingId, getRandomColorForCategory(cat));
+            // Enqueue promoted vehicle with its pre-allocated spotId (no duplicate error)
+            pendingSpawnQueue.offer(new SpawnRequest(cat, waitingId, getRandomColorForCategory(cat), result.getSpotId()));
         }
 
         statusMsgLbl.setText("✓ " + result.getMessage());
@@ -661,7 +758,7 @@ public class Parking3DApp extends Application {
             return;
         }
 
-        spawnAndParkVehicle(cat, id, getRandomColorForCategory(cat));
+        pendingSpawnQueue.offer(new SpawnRequest(cat, id, getRandomColorForCategory(cat), null));
         parkIdField.setText(cat.substring(0, 2).toUpperCase() + "-" + (autoIdCounter++));
     }
 
@@ -782,6 +879,8 @@ public class Parking3DApp extends Application {
         startSimBtn.setDisable(false);
         pauseSimBtn.setDisable(true);
         pauseSimBtn.setText("⏸ Pause");
+
+        pendingSpawnQueue.clear();
 
         // Clear 3D vehicles
         for (Vehicle3D v : activeVehicles.values()) {

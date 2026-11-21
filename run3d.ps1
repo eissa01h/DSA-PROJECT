@@ -6,3 +6,4 @@ Write-Host ""
 Write-Host "Launching 3D Simulation Environment..." -ForegroundColor Green
 
 & "C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe" --module-path javafx-sdk\lib --add-modules javafx.controls,javafx.graphics Main $args
+
