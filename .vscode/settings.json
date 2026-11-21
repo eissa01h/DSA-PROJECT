@@ -1,0 +1,12 @@
+{
+    "java.project.referencedLibraries": [
+        "javafx-sdk/lib/*.jar"
+    ],
+    "java.project.sourcePaths": [
+        "."
+    ],
+    "files.exclude": {
+        "**/.git": true,
+        "**/*.class": false
+    }
+}

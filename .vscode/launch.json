@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Smart Parking Finder 3D (Simulation)",
+            "request": "launch",
+            "mainClass": "Main",
+            "vmArgs": "--module-path \"${workspaceFolder}/javafx-sdk/lib\" --add-modules javafx.controls,javafx.graphics --enable-native-access=javafx.graphics"
+        },
+        {
+            "type": "java",
+            "name": "Smart Parking Finder (2D Swing Legacy)",
+            "request": "launch",
+            "mainClass": "Main",
+            "args": "--2d"
+        }
+    ]
+}
