@@ -219,13 +219,17 @@ public class ParkingManager {
         int bestRow = -1;
         int bestCol = -1;
         int minDistance = Integer.MAX_VALUE;
+        int minScore = Integer.MAX_VALUE;
 
-        // LINEAR SEARCH through the compatible zone
+        // LINEAR SEARCH through the compatible zone to find the nearest available space
         for (int r = 0; r < ROWS; r++) {
             for (int c = startCol; c <= endCol; c++) {
                 if (parkingLot[r][c].equals("EMPTY")) {
                     int distance = calculateManhattanDistance(r, c);
-                    if (distance < minDistance) {
+                    // Proximity score prioritizes nearest rows to entrance road, then left/right column
+                    int score = r * 10 + (c - startCol);
+                    if (score < minScore) {
+                        minScore = score;
                         minDistance = distance;
                         bestRow = r;
                         bestCol = c;

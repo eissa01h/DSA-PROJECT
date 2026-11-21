@@ -134,6 +134,20 @@ public class Vehicle3D extends Group {
     public double getY() { return currentY; }
     public double getZ() { return currentZ; }
     public double getYaw() { return currentYaw; }
+    public int getCurrentTargetIndex() { return currentTargetIndex; }
+
+    /**
+     * Calculates total remaining distance along BFS path to destination.
+     * Used for intersection right-of-way arbitration.
+     */
+    public double getRemainingDistance() {
+        if (path == null || currentTargetIndex >= path.size()) return 0;
+        double rem = Math.hypot(path.get(currentTargetIndex).x - currentX, path.get(currentTargetIndex).z - currentZ);
+        for (int k = currentTargetIndex; k < path.size() - 1; k++) {
+            rem += Math.hypot(path.get(k + 1).x - path.get(k).x, path.get(k + 1).z - path.get(k).z);
+        }
+        return rem;
+    }
 
     public void setHighlighted(boolean h) {
         this.highlighted = h;
@@ -579,14 +593,21 @@ public class Vehicle3D extends Group {
 
         // Calculate target yaw angle
         if (distance > 0.05) {
-            double targetYaw = Math.toDegrees(Math.atan2(dx, dz));
-            // Smooth yaw rotation
-            double diff = normalizeAngle(targetYaw - currentYaw);
-            double turnRate = 320.0 * dt; // degrees/sec
-            if (Math.abs(diff) < turnRate) {
+            double targetYaw;
+            // When exiting stall into aisle, keep stall orientation and reverse smoothly
+            if (state == State.EXITING && currentTargetIndex <= 1) {
+                targetYaw = (assignedCol % 2 == 0) ? -90.0 : 90.0;
                 setYaw(targetYaw);
             } else {
-                setYaw(currentYaw + Math.signum(diff) * turnRate);
+                targetYaw = Math.toDegrees(Math.atan2(dx, dz));
+                // Smooth yaw rotation
+                double diff = normalizeAngle(targetYaw - currentYaw);
+                double turnRate = 320.0 * dt; // degrees/sec
+                if (Math.abs(diff) < turnRate) {
+                    setYaw(targetYaw);
+                } else {
+                    setYaw(currentYaw + Math.signum(diff) * turnRate);
+                }
             }
         }
 

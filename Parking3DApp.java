@@ -162,14 +162,10 @@ public class Parking3DApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        // 7. Initial vehicles parked in the lot
-        spawnParkedInitialVehicle("Car", "CR-101", carColors[0]);
-        spawnParkedInitialVehicle("Bike", "BK-101", bikeColors[0]);
-
-        // 8. Start 60 FPS Animation & Physics Loop
+        // 7. Start 60 FPS Animation & Physics Loop
         startAnimationLoop();
 
-        // 9. Auto-start simulation after 0.6s so vehicles immediately arrive and drive
+        // 8. Auto-start simulation after 0.6s so vehicles immediately arrive and park at nearest spots
         javafx.animation.PauseTransition autoStart = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
         autoStart.setOnFinished(e -> startAutoSimulation());
         autoStart.play();
@@ -643,8 +639,20 @@ public class Parking3DApp extends Application {
     }
 
     /**
-     * Updates physics, path navigation, collision avoidance, and boom barrier automation
-     * for all moving vehicles at 60 FPS.
+     * Checks if any vehicle is currently exiting to prevent multi-vehicle exit pileups.
+     */
+    private boolean isAnyVehicleExiting() {
+        for (Vehicle3D v : movingVehicles) {
+            if (v.getState() == Vehicle3D.State.EXITING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Updates physics, path navigation, multi-stage collision avoidance,
+     * and boom barrier automation for all moving vehicles at 60 FPS.
      */
     private void updateVehicleMovements(double dt) {
         boolean needEntranceOpen = false;
@@ -657,27 +665,56 @@ public class Parking3DApp extends Application {
             if (v.getState() == Vehicle3D.State.DRIVING_TO_SPOT && v.getX() < 20.0 && v.getZ() < 0.0) {
                 needEntranceOpen = true;
             }
-            if (v.getState() == Vehicle3D.State.EXITING && v.getX() > 860.0 && v.getZ() > 500.0) {
+            if (v.getState() == Vehicle3D.State.EXITING && v.getX() > 840.0 && v.getZ() > 500.0) {
                 needExitOpen = true;
             }
 
-            // Safe following distance (anti-collision on roads and aisles)
+            // Multi-Stage Anti-Collision & Yielding System
             boolean yield = false;
             for (int j = 0; j < movingVehicles.size(); j++) {
                 if (i == j) continue;
                 Vehicle3D other = movingVehicles.get(j);
 
                 double dist = Math.hypot(other.getX() - v.getX(), other.getZ() - v.getZ());
-                double safeDist = v.getCategory().equalsIgnoreCase("Truck") ? 80.0 : 60.0;
+                double safeDist = (v.getCategory().equalsIgnoreCase("Truck") || other.getCategory().equalsIgnoreCase("Truck")) ? 90.0 : 72.0;
 
+                // 1. Critical Emergency Stop: too close in any direction
+                if (dist < 42.0) {
+                    if (v.getRemainingDistance() >= other.getRemainingDistance()) {
+                        yield = true;
+                        break;
+                    }
+                }
+
+                // 2. Aisle Clearance: if v is just backing out of stall into aisle, yield if other is driving in that aisle
+                if (v.getState() == Vehicle3D.State.EXITING && v.getCurrentTargetIndex() <= 1) {
+                    if (Math.abs(other.getX() - v.getX()) < 80.0 && Math.abs(other.getZ() - v.getZ()) < 110.0) {
+                        yield = true; // wait inside stall until aisle is clear
+                        break;
+                    }
+                }
+
+                // 3. South Perimeter Road Intersection Yield: aisle vehicles yield to vehicles already on South Road
+                if (v.getState() == Vehicle3D.State.EXITING && v.getZ() < 570.0 && v.getZ() > 490.0) {
+                    if (other.getZ() >= 560.0 && Math.abs(other.getX() - v.getX()) < 130.0) {
+                        yield = true; // wait at aisle mouth
+                        break;
+                    }
+                }
+
+                // 4. Safe Following Distance & Heading Collision Check
                 if (dist < safeDist) {
                     double yawRad = Math.toRadians(v.getYaw());
                     double dirX = Math.sin(yawRad);
                     double dirZ = Math.cos(yawRad);
                     double dot = (other.getX() - v.getX()) * dirX + (other.getZ() - v.getZ()) * dirZ;
-                    if (dot > 0) { // other vehicle is ahead in front of v
-                        yield = true;
-                        break;
+
+                    // other is in front or entering v's trajectory
+                    if (dot > -15.0) {
+                        if (dot > 15.0 || v.getRemainingDistance() >= other.getRemainingDistance()) {
+                            yield = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -713,17 +750,17 @@ public class Parking3DApp extends Application {
 
     /**
      * Auto Simulation Spawner Logic:
-     * Generates arriving vehicles and occasionally requests random exits
+     * Generates arriving vehicles and triggers orderly, non-colliding single exits.
      */
     private void handleAutoSpawn() {
-        // Occasionally trigger a vehicle exit if lot is moderately occupied
-        if (activeVehicles.size() > 4 && random.nextDouble() < 0.35) {
+        // Trigger exit only if enough cars parked AND no other vehicle is currently exiting
+        if (activeVehicles.size() > 5 && !isAnyVehicleExiting() && random.nextDouble() < 0.28) {
             triggerRandomExit();
             return;
         }
 
         // Queue new arrival if queue isn't backed up
-        if (pendingSpawnQueue.size() < 4) {
+        if (pendingSpawnQueue.size() < 3) {
             String[] categories = { "Bike", "Car", "Truck" };
             String cat = categories[random.nextInt(categories.length)];
             String idPrefix = cat.equals("Bike") ? "BK" : (cat.equals("Car") ? "CR" : "TR");
