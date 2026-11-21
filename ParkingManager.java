@@ -483,4 +483,37 @@ public class ParkingManager {
     public int getAvailableSpaces() {
         return getTotalSpaces() - getOccupiedSpaces();
     }
+
+    // Maps a Spot ID ("B1".."T10") back to its 2D coordinates [row, col]
+    public int[] getSpotCoordinates(String spotId) {
+        if (spotId == null || spotId.length() < 2) return null;
+        char prefix = Character.toUpperCase(spotId.charAt(0));
+        try {
+            int num = Integer.parseInt(spotId.substring(1));
+            if (num < 1 || num > 10) return null;
+            int r = (num - 1) / 2;
+            int offset = (num - 1) % 2;
+            int c;
+            if (prefix == 'B') {
+                c = offset;
+            } else if (prefix == 'C') {
+                c = 2 + offset;
+            } else if (prefix == 'T') {
+                c = 4 + offset;
+            } else {
+                return null;
+            }
+            return new int[]{r, c};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    // Resets the parking lot state for simulation reset
+    public void reset() {
+        initializeParkingLot();
+        waitingQueue.clear();
+        parkingHistory.clear();
+        lastAllocatedDistance = -1;
+    }
 }

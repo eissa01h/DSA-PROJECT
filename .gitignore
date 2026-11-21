@@ -1,26 +1,6 @@
-# Compiled class files
+javafx-sdk/
 *.class
-
-# Log files
-*.log
-
-# BlueJ files
-*.ctxt
-
-# IntelliJ IDEA
-.idea/
-*.iml
-out/
-
-# VS Code
-.vscode/
-
-# Eclipse
+.settings/
 .project
 .classpath
-.settings/
-
-# OS metadata
-.DS_Store
-Thumbs.db
-
+target/
