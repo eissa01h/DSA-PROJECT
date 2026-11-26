@@ -951,11 +951,20 @@ public class Parking3DApp extends Application {
             return;
         }
 
-        // Clear previous highlights
+        // Clear previous highlights across all vehicles and spots
         for (Vehicle3D v : activeVehicles.values()) {
             v.setHighlighted(false);
-            if (v.getState() == Vehicle3D.State.PARKED) {
-                lot3DScene.setSpotStatus(v.getAssignedRow(), v.getAssignedCol(), true, false);
+        }
+        for (int r = 0; r < 5; r++) {
+            for (int c = 0; c < 6; c++) {
+                boolean occ = false;
+                for (Vehicle3D v : activeVehicles.values()) {
+                    if (v.getState() == Vehicle3D.State.PARKED && v.getAssignedRow() == r && v.getAssignedCol() == c) {
+                        occ = true;
+                        break;
+                    }
+                }
+                lot3DScene.setSpotStatus(r, c, occ, false);
             }
         }
 
@@ -966,9 +975,9 @@ public class Parking3DApp extends Application {
             Vehicle3D target = activeVehicles.get(rec.getVehicleId());
             if (target != null) {
                 target.setHighlighted(true);
-                lot3DScene.setSpotStatus(rec.getRow(), rec.getCol(), true, true);
             }
-            statusMsgLbl.setText("✓ Binary Search: Found " + rec.getCategory() + " [" + rec.getVehicleId() + "] at Space " + rec.getSpotId() + "!");
+            lot3DScene.setSpotStatus(rec.getRow(), rec.getCol(), true, true);
+            statusMsgLbl.setText("✓ Binary Search: Found " + rec.getCategory() + " [" + rec.getVehicleId() + "] at Space " + rec.getSpotId() + " (Spot Highlighted in Grey)!");
             statusMsgLbl.setStyle("-fx-text-fill: #2DD4BF; -fx-font-weight: bold;");
         } else {
             int queuePos = manager.getWaitingPosition(searchId);

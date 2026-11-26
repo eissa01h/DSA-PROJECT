@@ -47,11 +47,13 @@ public class ParkingLot3DScene {
     // Spot status LED lights: key = "r_c"
     private final Map<String, Sphere> spotLedMap = new HashMap<>();
     private final Map<String, PhongMaterial> spotLedMatMap = new HashMap<>();
+    private final Map<String, PhongMaterial> spotPadMatMap = new HashMap<>();
+    private final Map<String, Color> spotDefaultColorMap = new HashMap<>();
 
     // Materials
     private final PhongMaterial matLedGreen = new PhongMaterial(Color.rgb(34, 197, 94));
     private final PhongMaterial matLedRed = new PhongMaterial(Color.rgb(239, 68, 68));
-    private final PhongMaterial matLedYellow = new PhongMaterial(Color.rgb(250, 204, 21));
+    private final PhongMaterial matLedGrey = new PhongMaterial(Color.rgb(180, 190, 205));
 
     public ParkingLot3DScene() {
         setupMaterials();
@@ -74,7 +76,7 @@ public class ParkingLot3DScene {
     private void setupMaterials() {
         matLedGreen.setSpecularColor(Color.WHITE);
         matLedRed.setSpecularColor(Color.WHITE);
-        matLedYellow.setSpecularColor(Color.WHITE);
+        matLedGrey.setSpecularColor(Color.WHITE);
     }
 
     private void setupCamera() {
@@ -253,7 +255,8 @@ public class ParkingLot3DScene {
                                       double w, double d, Color zoneColor, String spotId) {
         // 1. Bay ground tint
         Box pad = new Box(w, 0.3, d);
-        PhongMaterial padMat = new PhongMaterial(Color.color(zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 0.15));
+        Color defaultPadColor = Color.color(zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 0.15);
+        PhongMaterial padMat = new PhongMaterial(defaultPadColor);
         pad.setMaterial(padMat);
         pad.setTranslateX(x);
         pad.setTranslateY(-1.1);
@@ -319,6 +322,8 @@ public class ParkingLot3DScene {
         String key = row + "_" + col;
         spotLedMap.put(key, led);
         spotLedMatMap.put(key, ledMat);
+        spotPadMatMap.put(key, padMat);
+        spotDefaultColorMap.put(key, defaultPadColor);
 
         root3D.getChildren().addAll(pad, lineN, lineS, lineBack, wheelStop, idBadge, bollardPost, led);
     }
@@ -466,22 +471,37 @@ public class ParkingLot3DScene {
     }
 
     /**
-     * Updates the status LED for a spot:
-     * - "EMPTY": Green
-     * - Occupied: Red
-     * - Highlighted: Glowing Yellow
+     * Updates the status LED and stall platform pad for a spot:
+     * - "EMPTY": Green LED, default zone tint
+     * - Occupied: Red LED, default zone tint
+     * - Highlighted (Binary Search): Grey Spot & LED
      */
     public void setSpotStatus(int row, int col, boolean occupied, boolean highlighted) {
         String key = row + "_" + col;
         PhongMaterial mat = spotLedMatMap.get(key);
-        if (mat == null) return;
+        PhongMaterial padMat = spotPadMatMap.get(key);
+        Color defaultPadColor = spotDefaultColorMap.get(key);
 
         if (highlighted) {
-            mat.setDiffuseColor(Color.rgb(250, 204, 21));
-        } else if (occupied) {
-            mat.setDiffuseColor(Color.rgb(239, 68, 68));
+            // Highlighted spot turns GREY (both the platform stall pad and the LED)
+            if (mat != null) {
+                mat.setDiffuseColor(Color.rgb(180, 190, 205)); // Silver-grey LED
+            }
+            if (padMat != null) {
+                padMat.setDiffuseColor(Color.rgb(148, 163, 184, 0.85)); // Sleek grey platform highlight
+            }
         } else {
-            mat.setDiffuseColor(Color.rgb(34, 197, 94));
+            // Restore default zone tint to platform stall pad
+            if (padMat != null && defaultPadColor != null) {
+                padMat.setDiffuseColor(defaultPadColor);
+            }
+            if (mat != null) {
+                if (occupied) {
+                    mat.setDiffuseColor(Color.rgb(239, 68, 68)); // Red
+                } else {
+                    mat.setDiffuseColor(Color.rgb(34, 197, 94)); // Green
+                }
+            }
         }
     }
 

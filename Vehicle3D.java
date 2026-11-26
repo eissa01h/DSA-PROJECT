@@ -1853,13 +1853,13 @@ public class Vehicle3D extends Group {
     }
 
     /**
-     * Pulsing spotlight aura used when searched by Binary Search.
+     * Grey highlight platform aura used when searched by Binary Search.
      */
     private void buildHighlightAura() {
         double radius = category.equalsIgnoreCase("Truck") ? 55 : (category.equalsIgnoreCase("Bike") ? 32 : 42);
         highlightAura = new Box(radius, 2, radius);
-        PhongMaterial auraMat = new PhongMaterial(Color.rgb(255, 215, 0, 0.8));
-        auraMat.setSpecularColor(Color.YELLOW);
+        PhongMaterial auraMat = new PhongMaterial(Color.rgb(148, 163, 184, 0.85)); // Grey platform
+        auraMat.setSpecularColor(Color.rgb(220, 225, 235));
         highlightAura.setMaterial(auraMat);
         highlightAura.setTranslateY(-1);
         highlightAura.setVisible(false);
